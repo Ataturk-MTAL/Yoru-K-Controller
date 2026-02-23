@@ -133,6 +133,7 @@ export component ConnectionPanel {
                     LineEdit {
                         horizontal-stretch: 1;
                         text <=> tcp-host-text;
+                        placeholder-text: "192.168.4.1";
                         edited(val) => { AppState.tcp-host = val; }
                     }
                 }
@@ -152,6 +153,7 @@ export component ConnectionPanel {
                     LineEdit {
                         horizontal-stretch: 1;
                         text <=> tcp-port-text;
+                        placeholder-text: "80";
                         input-type: number;
                     }
                 }
