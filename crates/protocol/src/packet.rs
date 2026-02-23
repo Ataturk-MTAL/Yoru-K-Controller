@@ -71,6 +71,17 @@ pub fn brake_packet(on: bool) -> Vec<u8> {
     result
 }
 
+/// GPS yayın komut paketi: \[0xAA\]\[0x04\]\[0x01\]\[on=1/off=0\]\[CK2\]\[CK1\]
+/// `on=true`  → ESP32'ye periyodik (100ms) GPS paketi göndermesini söyler
+/// `on=false` → GPS yayınını durdurur
+pub fn gps_enable_packet(on: bool) -> Vec<u8> {
+    let pkt = vec![START_BYTE, Command::SetGpsEnable as u8, 0x01, if on { 0x01 } else { 0x00 }];
+    let ck = fletcher16(&pkt[1..]);
+    let mut result = pkt;
+    result.extend_from_slice(&ck);
+    result
+}
+
 /// Gelen ham paketi ayrıştırır
 pub fn parse_response(data: &[u8]) -> Option<RobotResponse> {
     if data.len() < 3 || data[0] != START_BYTE {

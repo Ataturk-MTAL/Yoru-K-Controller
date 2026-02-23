@@ -27,6 +27,8 @@ pub struct SharedState {
     pub reverse_left:   Arc<AtomicBool>,
     pub reverse_right:  Arc<AtomicBool>,
     pub connection:     Arc<Mutex<ConnectionManager>>,
+    /// GPS iz noktaları — bridge thread'i tarafından güncellenir
+    pub gps_track:      Arc<Mutex<Vec<(f32, f32)>>>,
 }
 
 impl SharedState {
@@ -38,6 +40,7 @@ impl SharedState {
             reverse_left:  Arc::new(AtomicBool::new(false)),
             reverse_right: Arc::new(AtomicBool::new(false)),
             connection:    Arc::new(Mutex::new(connection)),
+            gps_track:     Arc::new(Mutex::new(Vec::new())),
         }
     }
 }
@@ -47,6 +50,7 @@ pub fn run_bridge(
     ui_weak:   slint::Weak<AppWindow>,
     robot_rx:  mpsc::Receiver<RobotEvent>,
     camera_rx: mpsc::Receiver<RgbaFrame>,
+    gps_track: Arc<Mutex<Vec<(f32, f32)>>>,
 ) {
     thread::Builder::new()
         .name("bridge".into())
@@ -54,47 +58,80 @@ pub fn run_bridge(
             loop {
                 // ── Robot olayları ───────────────────────────────
                 while let Ok(event) = robot_rx.try_recv() {
-                    let w = ui_weak.clone();
-                    let _ = slint::invoke_from_event_loop(move || {
-                        let Some(ui) = w.upgrade() else { return };
-                        let state = AppState::get(&ui);
-                        match event {
-                            RobotEvent::Connected(msg) => {
-                                state.set_connected(true);
-                                state.set_status_text(
-                                    format!("Bağlı — {msg}").into()
-                                );
-                            }
-                            RobotEvent::Disconnected => {
-                                state.set_connected(false);
-                                state.set_motor_running(false);
-                                state.set_status_text("Bağlantı kesildi".into());
-                            }
-                            RobotEvent::Error(e) => {
-                                state.set_status_text(e.into());
-                            }
-                            RobotEvent::Packet(resp) => match resp {
-                                RobotResponse::Status(running) => {
-                                    state.set_motor_running(running);
-                                }
-                                RobotResponse::Speed { gear, left, right } => {
-                                    state.set_gear(gear as i32);
-                                    state.set_left_speed(left as i32);
-                                    state.set_right_speed(right as i32);
-                                }
-                                RobotResponse::Light(on) => {
-                                    state.set_light_on(on);
-                                }
-                                RobotResponse::Brake(on) => {
-                                    state.set_brake_on(on);
-                                }
-                                RobotResponse::Gps { .. } => {
-                                    // Faz 2: harita güncellemesi
-                                }
-                                RobotResponse::Unknown(_) => {}
-                            },
+                    match &event {
+                        // GPS ayrı işlenir — iz birikimi burada yapılır
+                        RobotEvent::Packet(RobotResponse::Gps { lat, lon }) => {
+                            let (lat, lon) = (*lat, *lon);
+                            let track_snapshot = {
+                                let mut track = gps_track.lock().unwrap();
+                                track.push((lat, lon));
+                                // Bounding-box hesapla
+                                let lat_min = track.iter().map(|p| p.0).fold(f32::INFINITY, f32::min);
+                                let lat_max = track.iter().map(|p| p.0).fold(f32::NEG_INFINITY, f32::max);
+                                let lon_min = track.iter().map(|p| p.1).fold(f32::INFINITY, f32::min);
+                                let lon_max = track.iter().map(|p| p.1).fold(f32::NEG_INFINITY, f32::max);
+                                let count   = track.len() as i32;
+                                (lat, lon, lat_min, lat_max, lon_min, lon_max, count)
+                            };
+                            let w = ui_weak.clone();
+                            let _ = slint::invoke_from_event_loop(move || {
+                                let Some(ui) = w.upgrade() else { return };
+                                let state = AppState::get(&ui);
+                                let (lat, lon, lat_min, lat_max, lon_min, lon_max, count) = track_snapshot;
+                                state.set_gps_lat(lat);
+                                state.set_gps_lon(lon);
+                                state.set_gps_lat_min(lat_min);
+                                state.set_gps_lat_max(lat_max);
+                                state.set_gps_lon_min(lon_min);
+                                state.set_gps_lon_max(lon_max);
+                                state.set_gps_point_count(count);
+                            });
                         }
-                    });
+                        _ => {
+                            // Diğer tüm event'ler UI'a iletilir
+                            let w  = ui_weak.clone();
+                            let ev = event.clone();
+                            let _ = slint::invoke_from_event_loop(move || {
+                                let Some(ui) = w.upgrade() else { return };
+                                let state = AppState::get(&ui);
+                                match ev {
+                                    RobotEvent::Connected(msg) => {
+                                        state.set_connected(true);
+                                        state.set_status_text(
+                                            format!("Bağlı — {msg}").into()
+                                        );
+                                    }
+                                    RobotEvent::Disconnected => {
+                                        state.set_connected(false);
+                                        state.set_motor_running(false);
+                                        state.set_gps_active(false);
+                                        state.set_status_text("Bağlantı kesildi".into());
+                                    }
+                                    RobotEvent::Error(e) => {
+                                        state.set_status_text(e.into());
+                                    }
+                                    RobotEvent::Packet(resp) => match resp {
+                                        RobotResponse::Status(running) => {
+                                            state.set_motor_running(running);
+                                        }
+                                        RobotResponse::Speed { gear, left, right } => {
+                                            state.set_gear(gear as i32);
+                                            state.set_left_speed(left as i32);
+                                            state.set_right_speed(right as i32);
+                                        }
+                                        RobotResponse::Light(on) => {
+                                            state.set_light_on(on);
+                                        }
+                                        RobotResponse::Brake(on) => {
+                                            state.set_brake_on(on);
+                                        }
+                                        RobotResponse::Gps { .. } => { /* yukarıda işlendi */ }
+                                        RobotResponse::Unknown(_) => {}
+                                    },
+                                }
+                            });
+                        }
+                    }
                 }
 
                 // ── Kamera frame'leri ────────────────────────────

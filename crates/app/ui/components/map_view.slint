@@ -1,0 +1,286 @@
+import { AppState } from "../state.slint";
+import { Theme }    from "../theme.slint";
+
+// ─────────────────────────────────────────────────────────────────────────────
+// MapView — GPS konumunu ve istatistiklerini gösterir
+//
+// Slint'te gerçek zamanlı path çizimi (Canvas) desteklenmediğinden
+// iz görselleştirmesi basit bir bilgi paneli + marker overlay olarak
+// tasarlanmıştır. İz noktaları Rust'ta biriktirilir; UI bounding-box
+// ve sayaç üzerinden bilgileri gösterir.
+// ─────────────────────────────────────────────────────────────────────────────
+export component MapView {
+    callback enable-gps();
+    callback disable-gps();
+
+    // ── Arkaplan ─────────────────────────────────────────
+    Rectangle {
+        background: #0a0f1a;
+
+        // ── GPS aktif değilken yer tutucu ────────────────
+        if (!AppState.gps-active && AppState.gps-point-count == 0): VerticalLayout {
+            alignment: center;
+            spacing: Theme.pad-md;
+
+            Text {
+                text: "🛰";
+                font-size: 48px;
+                horizontal-alignment: center;
+                color: Theme.text-dim;
+            }
+            Text {
+                text: "GPS aktif değil";
+                color: Theme.text-dim;
+                font-size: Theme.font-lg;
+                horizontal-alignment: center;
+            }
+            Text {
+                text: "GPS'i etkinleştirmek için aşağıdaki butona basın";
+                color: Theme.text-disabled;
+                font-size: Theme.font-sm;
+                horizontal-alignment: center;
+            }
+        }
+
+        // ── Koordinat bilgi kartı (GPS alındığında) ──────
+        if (AppState.gps-point-count > 0): VerticalLayout {
+            alignment: center;
+            spacing: Theme.pad-md;
+            padding: Theme.pad-lg;
+
+            // Başlık
+            Text {
+                text: "📍 Robot Konumu";
+                color: Theme.text-primary;
+                font-size: Theme.font-lg;
+                horizontal-alignment: center;
+            }
+
+            // Koordinat kutusu
+            Rectangle {
+                background: Theme.bg-card;
+                border-radius: Theme.radius;
+                border-color: AppState.gps-active ? Theme.accent-green : Theme.border;
+                border-width: 1px;
+                animate border-color { duration: 300ms; }
+
+                VerticalLayout {
+                    padding: Theme.pad-md;
+                    spacing: Theme.pad-sm;
+
+                    // Enlem
+                    HorizontalLayout {
+                        spacing: Theme.pad-sm;
+                        Text {
+                            text: "Enlem:";
+                            color: Theme.text-dim;
+                            font-size: Theme.font-md;
+                            width: 80px;
+                        }
+                        Text {
+                            text: AppState.gps-lat == 0.0 ? "—" :
+                                  (AppState.gps-lat >= 0.0 ? "N " : "S ") +
+                                  round(abs(AppState.gps-lat) * 1000000) / 1000000 + "°";
+                            color: Theme.accent-green;
+                            font-size: Theme.font-md;
+                        }
+                    }
+
+                    // Boylam
+                    HorizontalLayout {
+                        spacing: Theme.pad-sm;
+                        Text {
+                            text: "Boylam:";
+                            color: Theme.text-dim;
+                            font-size: Theme.font-md;
+                            width: 80px;
+                        }
+                        Text {
+                            text: AppState.gps-lon == 0.0 ? "—" :
+                                  (AppState.gps-lon >= 0.0 ? "E " : "W ") +
+                                  round(abs(AppState.gps-lon) * 1000000) / 1000000 + "°";
+                            color: Theme.accent-green;
+                            font-size: Theme.font-md;
+                        }
+                    }
+
+                    // Ayırıcı
+                    Rectangle { height: 1px; background: Theme.border; }
+
+                    // İz istatistikleri
+                    HorizontalLayout {
+                        spacing: Theme.pad-sm;
+                        Text {
+                            text: "İz noktası:";
+                            color: Theme.text-dim;
+                            font-size: Theme.font-sm;
+                            width: 80px;
+                        }
+                        Text {
+                            text: AppState.gps-point-count + " nokta";
+                            color: Theme.text-primary;
+                            font-size: Theme.font-sm;
+                        }
+                    }
+
+                    // Enlem aralığı
+                    if (AppState.gps-point-count > 1): HorizontalLayout {
+                        spacing: Theme.pad-sm;
+                        Text {
+                            text: "Kuzey-Güney:";
+                            color: Theme.text-dim;
+                            font-size: Theme.font-sm;
+                            width: 80px;
+                        }
+                        Text {
+                            text: round(abs(AppState.gps-lat-max - AppState.gps-lat-min) * 111320) + " m";
+                            color: Theme.text-primary;
+                            font-size: Theme.font-sm;
+                        }
+                    }
+
+                    // Boylam aralığı
+                    if (AppState.gps-point-count > 1): HorizontalLayout {
+                        spacing: Theme.pad-sm;
+                        Text {
+                            text: "Doğu-Batı:";
+                            color: Theme.text-dim;
+                            font-size: Theme.font-sm;
+                            width: 80px;
+                        }
+                        Text {
+                            text: round(abs(AppState.gps-lon-max - AppState.gps-lon-min) * 111320 * 0.7) + " m";
+                            color: Theme.text-primary;
+                            font-size: Theme.font-sm;
+                        }
+                    }
+                }
+            }
+
+            // Mini iz haritası (bounding-box normalize görselleştirme)
+            if (AppState.gps-point-count > 1): Rectangle {
+                height: 180px;
+                background: Theme.bg-card;
+                border-radius: Theme.radius;
+                border-color: Theme.border;
+                border-width: 1px;
+
+                // Marker: son konum (bounding-box içinde normalize)
+                // Enlem arttıkça yukarı → (lat_max - lat) / (lat_max - lat_min)
+                // Boylam arttıkça sağa → (lon - lon_min) / (lon_max - lon_min)
+                property <float> norm-x: AppState.gps-lon-max == AppState.gps-lon-min ? 0.5
+                    : (AppState.gps-lon - AppState.gps-lon-min) /
+                      (AppState.gps-lon-max - AppState.gps-lon-min);
+                property <float> norm-y: AppState.gps-lat-max == AppState.gps-lat-min ? 0.5
+                    : (AppState.gps-lat-max - AppState.gps-lat) /
+                      (AppState.gps-lat-max - AppState.gps-lat-min);
+
+                // Izgara çizgileri (yatay × dikey — simetri için 3x3)
+                for col in [0, 1, 2, 3]: Rectangle {
+                    x: col * (parent.width / 3);
+                    y: 0px; width: 1px; height: parent.height;
+                    background: Theme.border;
+                    opacity: 0.4;
+                }
+                for row in [0, 1, 2, 3]: Rectangle {
+                    x: 0px; y: row * (parent.height / 3);
+                    width: parent.width; height: 1px;
+                    background: Theme.border;
+                    opacity: 0.4;
+                }
+
+                // Marker noktası
+                marker := Rectangle {
+                    width: 14px; height: 14px;
+                    border-radius: 7px;
+                    background: Theme.accent-green;
+                    border-color: white;
+                    border-width: 2px;
+                    x: norm-x * (parent.width - self.width);
+                    y: norm-y * (parent.height - self.height);
+                    animate x { duration: 200ms; easing: ease-out; }
+                    animate y { duration: 200ms; easing: ease-out; }
+                }
+
+                // "N" kuzeyi göster
+                Text {
+                    text: "N";
+                    color: Theme.text-disabled;
+                    font-size: Theme.font-sm;
+                    x: parent.width / 2 - self.width / 2;
+                    y: 4px;
+                }
+            }
+        }
+
+        // ── GPS aktifken titreşen sinyal göstergesi (sağ üst) ──
+        if (AppState.gps-active): Rectangle {
+            x: parent.width - self.width - 8px;
+            y: 8px;
+            width: pulse-text.preferred-width + 16px;
+            height: 22px;
+            background: #00000088;
+            border-radius: 4px;
+
+            pulse-text := Text {
+                text: "● GPS";
+                color: Theme.accent-green;
+                font-size: Theme.font-sm;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                x: 8px;
+            }
+        }
+
+        // ── GPS butonu (sol alt) ─────────────────────────
+        HorizontalLayout {
+            y: parent.height - self.height - 8px;
+            x: 8px;
+            spacing: Theme.pad-xs;
+            width: 200px;
+            height: 32px;
+
+            gps-btn := Rectangle {
+                background: AppState.gps-active ? Theme.accent : Theme.accent-green;
+                border-radius: Theme.radius;
+                horizontal-stretch: 1;
+                animate background { duration: 150ms; }
+
+                Text {
+                    text: AppState.gps-active ? "■ GPS Durdur" : "▶ GPS Başlat";
+                    color: white;
+                    font-size: Theme.font-sm;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                TouchArea {
+                    clicked => {
+                        if (AppState.gps-active) {
+                            root.disable-gps();
+                        } else {
+                            root.enable-gps();
+                        }
+                    }
+                }
+            }
+        }
+
+        // ── Bağlantı uyarısı (bağlı değilken) ──────────
+        if (!AppState.connected): Rectangle {
+            x: 8px; y: 8px;
+            height: 24px;
+            width: gps-warn.preferred-width + 16px;
+            background: #cc000088;
+            border-radius: 4px;
+
+            gps-warn := Text {
+                text: "Robot bağlı değil";
+                color: white;
+                font-size: Theme.font-sm;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+                x: 8px;
+            }
+        }
+    }
+}

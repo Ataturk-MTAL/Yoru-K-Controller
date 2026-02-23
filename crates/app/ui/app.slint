@@ -5,6 +5,7 @@ import { MotorControl }    from "components/motor_control.slint";
 import { JoystickPanel }   from "components/joystick_panel.slint";
 import { SpeedDisplay }    from "components/speed_display.slint";
 import { CameraView }      from "components/camera_view.slint";
+import { MapView }         from "components/map_view.slint";
 
 export { AppState }
 
@@ -32,6 +33,8 @@ export component AppWindow inherits Window {
     callback joystick-released();
     callback start-camera(int);
     callback stop-camera();
+    callback enable-gps();
+    callback disable-gps();
 
     // ── Klavye focus ─────────────────────────────────────
     forward-focus: key-handler;
@@ -51,7 +54,10 @@ export component AppWindow inherits Window {
             // Periferal
             if (e.text == "l") { root.send-light(!AppState.light-on); return accept; }
             if (e.text == "b") { root.send-brake(!AppState.brake-on); return accept; }
-            // WASD / Ok tuşları — Rust tarafında işlenir (invoke_from_event_loop ile hız hesaplanır)
+            // Tab geçişi — M = Harita / C = Kamera
+            if (e.text == "m") { AppState.active-tab = 1; return accept; }
+            if (e.text == "c") { AppState.active-tab = 0; return accept; }
+            // WASD / Ok tuşları — Rust tarafında işlenir
             if (e.text == "w" || e.text == Key.UpArrow)    { return accept; }
             if (e.text == "s" || e.text == Key.DownArrow)  { return accept; }
             if (e.text == "a" || e.text == Key.LeftArrow)  { return accept; }
@@ -94,7 +100,7 @@ export component AppWindow inherits Window {
 
                     // Klavye kısayolları ipucu
                     Text {
-                        text: "WASD · Space=DUR · L=Işık · B=Fren · 1/2/3=Vites";
+                        text: "WASD · Space=DUR · L=Işık · B=Fren · 1/2/3=Vites · C/M=Sekme";
                         color: Theme.text-disabled;
                         font-size: Theme.font-sm;
                         vertical-alignment: center;
@@ -107,14 +113,130 @@ export component AppWindow inherits Window {
                 vertical-stretch: 1;
                 spacing: 0px;
 
-                // SOL: Kamera görüntüsü (esnek genişlik)
-                CameraView {
+                // ══ SOL PANEL: Kamera / Harita sekmeli ══════
+                VerticalLayout {
                     horizontal-stretch: 1;
-                    start-camera(i) => { root.start-camera(i); }
-                    stop-camera()   => { root.stop-camera(); }
+                    spacing: 0px;
+
+                    // ── Sekme başlıkları ─────────────────
+                    Rectangle {
+                        height: 36px;
+                        background: Theme.bg-panel;
+                        border-color: Theme.border;
+
+                        HorizontalLayout {
+                            spacing: 0px;
+                            padding-left: Theme.pad-sm;
+                            padding-right: Theme.pad-sm;
+                            alignment: start;
+
+                            // Tab 0: Kamera
+                            cam-tab := Rectangle {
+                                width: 110px;
+                                height: parent.height;
+                                background: AppState.active-tab == 0
+                                    ? Theme.bg-dark : transparent;
+                                border-radius: 0px;
+
+                                HorizontalLayout {
+                                    alignment: center;
+                                    spacing: Theme.pad-xs;
+                                    Text {
+                                        text: "📷 Kamera";
+                                        color: AppState.active-tab == 0
+                                            ? Theme.text-primary : Theme.text-dim;
+                                        font-size: Theme.font-sm;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                                // Alt çizgi aktif göstergesi
+                                Rectangle {
+                                    y: parent.height - 2px;
+                                    height: 2px;
+                                    width: parent.width;
+                                    background: AppState.active-tab == 0
+                                        ? Theme.accent-green : transparent;
+                                    animate background { duration: 150ms; }
+                                }
+                                TouchArea {
+                                    clicked => { AppState.active-tab = 0; }
+                                }
+                            }
+
+                            // Tab 1: Harita
+                            map-tab := Rectangle {
+                                width: 110px;
+                                height: parent.height;
+                                background: AppState.active-tab == 1
+                                    ? Theme.bg-dark : transparent;
+
+                                HorizontalLayout {
+                                    alignment: center;
+                                    spacing: Theme.pad-xs;
+                                    Text {
+                                        text: "🛰 Harita";
+                                        color: AppState.active-tab == 1
+                                            ? Theme.text-primary : Theme.text-dim;
+                                        font-size: Theme.font-sm;
+                                        vertical-alignment: center;
+                                    }
+                                    // GPS aktifken küçük yeşil nokta
+                                    if (AppState.gps-active): Rectangle {
+                                        width: 6px; height: 6px;
+                                        border-radius: 3px;
+                                        background: Theme.accent-green;
+                                        y: parent.height / 2 - self.height / 2 - 4px;
+                                    }
+                                }
+                                Rectangle {
+                                    y: parent.height - 2px;
+                                    height: 2px;
+                                    width: parent.width;
+                                    background: AppState.active-tab == 1
+                                        ? Theme.accent-green : transparent;
+                                    animate background { duration: 150ms; }
+                                }
+                                TouchArea {
+                                    clicked => { AppState.active-tab = 1; }
+                                }
+                            }
+
+                            Rectangle { horizontal-stretch: 1; }
+
+                            // GPS nokta sayısı (harita sekmesinde)
+                            if (AppState.active-tab == 1 && AppState.gps-point-count > 0): Text {
+                                text: AppState.gps-point-count + " nokta";
+                                color: Theme.text-dim;
+                                font-size: Theme.font-sm;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+
+                    // ── Sekme içeriği ────────────────────
+                    Rectangle {
+                        vertical-stretch: 1;
+                        clip: true;
+
+                        // Tab 0: Kamera görüntüsü
+                        if (AppState.active-tab == 0): CameraView {
+                            width: parent.width;
+                            height: parent.height;
+                            start-camera(i) => { root.start-camera(i); }
+                            stop-camera()   => { root.stop-camera(); }
+                        }
+
+                        // Tab 1: Harita / GPS
+                        if (AppState.active-tab == 1): MapView {
+                            width: parent.width;
+                            height: parent.height;
+                            enable-gps()  => { root.enable-gps(); }
+                            disable-gps() => { root.disable-gps(); }
+                        }
+                    }
                 }
 
-                // SAĞ: Kontrol paneli (sabit genişlik)
+                // ══ SAĞ PANEL: Kontrol (asla gizlenmez) ════
                 Rectangle {
                     width:      Theme.panel-width;
                     background: Theme.bg-panel;
@@ -188,6 +310,18 @@ export component AppWindow inherits Window {
                     }
 
                     Rectangle { horizontal-stretch: 1; }
+
+                    // GPS koordinatı (harita aktifken)
+                    if (AppState.gps-active && AppState.gps-point-count > 0): Text {
+                        text: "🛰 " +
+                              round(AppState.gps-lat * 10000) / 10000 + "°  " +
+                              round(AppState.gps-lon * 10000) / 10000 + "°";
+                        color: Theme.accent-green;
+                        font-size: Theme.font-sm;
+                        vertical-alignment: center;
+                    }
+
+                    Rectangle { width: Theme.pad-md; }
 
                     // Motor durumu
                     if (AppState.motor-running): Text {

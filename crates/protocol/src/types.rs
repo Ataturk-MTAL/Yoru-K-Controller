@@ -13,16 +13,17 @@ pub enum RobotResponse {
 #[repr(u8)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Command {
-    SetStop   = 0x00,
-    SetSpeed  = 0x01,
-    SetLight  = 0x02,
-    SetBrake  = 0x03,
-    SetStart  = 0xFF,
-    GetStatus = 0x10,
-    GetSpeed  = 0x11,
-    GetLight  = 0x12,
-    GetBrake  = 0x13,
-    GetGps    = 0x14,
+    SetStop      = 0x00,
+    SetSpeed     = 0x01,
+    SetLight     = 0x02,
+    SetBrake     = 0x03,
+    SetGpsEnable = 0x04,  // 0x01 = GPS yayınını başlat, 0x00 = durdur
+    SetStart     = 0xFF,
+    GetStatus    = 0x10,
+    GetSpeed     = 0x11,
+    GetLight     = 0x12,
+    GetBrake     = 0x13,
+    GetGps       = 0x14,
 }
 
 /// Vites seçimi

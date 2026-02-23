@@ -11,7 +11,7 @@ use anyhow::Result;
 use slint::Global;
 use tracing_subscriber::EnvFilter;
 
-use protocol::{simple_packet, light_packet, brake_packet, Command};
+use protocol::{simple_packet, light_packet, brake_packet, gps_enable_packet, Command};
 use transport::{ConnectionManager, RobotEvent};
 use vision::camera::spawn_camera;
 
@@ -140,10 +140,42 @@ fn main() -> Result<()> {
         }
     });
 
-    let ui_weak = ui.as_weak();
+    let ui_weak_stopcam = ui.as_weak();
     ui.on_stop_camera(move || {
-        if let Some(u) = ui_weak.upgrade() {
+        if let Some(u) = ui_weak_stopcam.upgrade() {
             AppState::get(&u).set_camera_running(false);
+        }
+    });
+
+    // GPS — yayın başlat
+    let s = state.clone();
+    let ui_weak_gps_on = ui.as_weak();
+    ui.on_enable_gps(move || {
+        // Yeni GPS oturumu — önceki izi temizle
+        s.gps_track.lock().unwrap().clear();
+        let pkt = gps_enable_packet(true);
+        s.connection.lock().unwrap().send(pkt);
+        if let Some(u) = ui_weak_gps_on.upgrade() {
+            let st = AppState::get(&u);
+            st.set_gps_active(true);
+            st.set_gps_point_count(0);
+            st.set_gps_lat(0.0);
+            st.set_gps_lon(0.0);
+            st.set_gps_lat_min(0.0);
+            st.set_gps_lat_max(0.0);
+            st.set_gps_lon_min(0.0);
+            st.set_gps_lon_max(0.0);
+        }
+    });
+
+    // GPS — yayın durdur
+    let s = state.clone();
+    let ui_weak_gps_off = ui.as_weak();
+    ui.on_disable_gps(move || {
+        let pkt = gps_enable_packet(false);
+        s.connection.lock().unwrap().send(pkt);
+        if let Some(u) = ui_weak_gps_off.upgrade() {
+            AppState::get(&u).set_gps_active(false);
         }
     });
 
@@ -151,8 +183,8 @@ fn main() -> Result<()> {
     // Arka plan thread'leri
     // ═══════════════════════════════════════════════════
 
-    // Köprü: Rust → Slint
-    run_bridge(ui.as_weak(), robot_rx, camera_rx);
+    // Köprü: Rust → Slint (gps_track Arc'ı da iletiliyor)
+    run_bridge(ui.as_weak(), robot_rx, camera_rx, state.gps_track.clone());
 
     // Periyodik hız gönderimi: 20Hz
     run_periodic_send(state.clone());

@@ -27,4 +27,17 @@ export global AppState {
     in-out property <bool>  camera-running: false;
     in-out property <int>   camera-fps:     0;
     in-out property <int>   camera-index:   0;
+
+    // ── GPS / Harita ─────────────────────────────────────
+    in-out property <bool>  gps-active:      false;  // GPS yayını açık mı?
+    in-out property <float> gps-lat:         0.0;    // Son enlem
+    in-out property <float> gps-lon:         0.0;    // Son boylam
+    in-out property <float> gps-lat-min:     0.0;    // İz sınırı: min enlem
+    in-out property <float> gps-lat-max:     0.0;    // İz sınırı: max enlem
+    in-out property <float> gps-lon-min:     0.0;    // İz sınırı: min boylam
+    in-out property <float> gps-lon-max:     0.0;    // İz sınırı: max boylam
+    in-out property <int>   gps-point-count: 0;      // Toplam iz noktası sayısı
+
+    // ── Sol panel aktif sekme ────────────────────────────
+    in-out property <int>   active-tab: 0;           // 0 = Kamera, 1 = Harita
 }
