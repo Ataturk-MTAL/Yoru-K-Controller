@@ -1,0 +1,30 @@
+// Merkezi uygulama durumu — tüm bileşenler bu global'i okur/yazar
+export global AppState {
+    // ── Bağlantı ────────────────────────────────────────
+    in-out property <bool>     connected:       false;
+    in-out property <bool>     is-serial:       true;
+    in-out property <string>   status-text:     "Hazır...";
+    in-out property <string>   serial-port:     "";
+    in-out property <int>      baud-rate:       115200;
+    in-out property <string>   tcp-host:        "192.168.4.1";
+    in-out property <int>      tcp-port:        80;
+    in-out property <[string]> available-ports: [];
+
+    // ── Motor durumu ─────────────────────────────────────
+    in-out property <bool>  motor-running:  false;
+    in-out property <int>   gear:           1;
+    in-out property <int>   left-speed:     0;
+    in-out property <int>   right-speed:    0;
+    in-out property <bool>  reverse-left:   false;
+    in-out property <bool>  reverse-right:  false;
+
+    // ── Periferal ────────────────────────────────────────
+    in-out property <bool>  light-on:  false;
+    in-out property <bool>  brake-on:  false;
+
+    // ── Kamera ──────────────────────────────────────────
+    in-out property <image> camera-frame;
+    in-out property <bool>  camera-running: false;
+    in-out property <int>   camera-fps:     0;
+    in-out property <int>   camera-index:   0;
+}

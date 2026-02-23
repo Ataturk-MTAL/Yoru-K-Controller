@@ -1,0 +1,19 @@
+[package]
+name    = "app"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+protocol  = { path = "../protocol" }
+transport = { path = "../transport" }
+control   = { path = "../control" }
+vision    = { path = "../vision" }
+
+slint     = { workspace = true }
+tokio     = { workspace = true }
+anyhow    = { workspace = true }
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+[build-dependencies]
+slint-build = { workspace = true }

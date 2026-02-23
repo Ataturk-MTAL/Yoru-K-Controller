@@ -1,0 +1,309 @@
+import { AppState } from "../state.slint";
+import { Theme }    from "../theme.slint";
+
+export component MotorControl {
+    callback start();
+    callback stop();
+    callback set-gear(int);
+    callback set-light(bool);
+    callback set-brake(bool);
+    callback set-reverse-l(bool);
+    callback set-reverse-r(bool);
+
+    Rectangle {
+        background: Theme.bg-card;
+        border-radius: Theme.radius;
+
+        VerticalLayout {
+            padding: Theme.pad-sm;
+            spacing: Theme.pad-xs;
+
+            // Başlık
+            Text {
+                text: "MOTOR KONTROL";
+                color: Theme.text-dim;
+                font-size: Theme.font-sm;
+                letter-spacing: 1.5px;
+            }
+
+            // BAŞLAT / DURDUR
+            HorizontalLayout {
+                spacing: Theme.pad-xs;
+
+                // BAŞLAT
+                start-rect := Rectangle {
+                    border-radius: Theme.radius;
+                    height: 36px;
+                    horizontal-stretch: 1;
+
+                    Text {
+                        text: "▶ BAŞLAT";
+                        color: white;
+                        font-size: Theme.font-md;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    TouchArea {
+                        enabled: AppState.connected && !AppState.motor-running;
+                        clicked => { root.start(); }
+                    }
+
+                    states [
+                        ready when AppState.connected && !AppState.motor-running: {
+                            background: Theme.accent-green;
+                            in { animate background { duration: 200ms; } }
+                        }
+                        disabled when !AppState.connected || AppState.motor-running: {
+                            background: Theme.text-disabled;
+                            in { animate background { duration: 200ms; } }
+                        }
+                    ]
+                }
+
+                // DURDUR
+                stop-rect := Rectangle {
+                    border-radius: Theme.radius;
+                    height: 36px;
+                    horizontal-stretch: 1;
+
+                    Text {
+                        text: "■ DURDUR";
+                        color: white;
+                        font-size: Theme.font-md;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    TouchArea {
+                        enabled: AppState.motor-running;
+                        clicked => { root.stop(); }
+                    }
+
+                    states [
+                        running when AppState.motor-running: {
+                            background: Theme.accent;
+                            in { animate background { duration: 200ms; } }
+                        }
+                        idle when !AppState.motor-running: {
+                            background: Theme.text-disabled;
+                            in { animate background { duration: 200ms; } }
+                        }
+                    ]
+                }
+            }
+
+            // Vites seçimi
+            HorizontalLayout {
+                spacing: Theme.pad-xs;
+                alignment: center;
+
+                Text {
+                    text: "VİTES:";
+                    color: Theme.text-dim;
+                    font-size: Theme.font-sm;
+                    vertical-alignment: center;
+                    width: 50px;
+                }
+
+                for g in [1, 2, 3]: gear-btn := Rectangle {
+                    border-radius: Theme.radius;
+                    height: 28px;
+                    width: 44px;
+
+                    gear-label := Text {
+                        text: "V\{g}";
+                        font-size: Theme.font-md;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    TouchArea {
+                        clicked => { root.set-gear(g); }
+                    }
+
+                    states [
+                        selected when AppState.gear == g: {
+                            background: Theme.accent;
+                            gear-label.color: white;
+                            in { animate background { duration: 100ms; } }
+                        }
+                        unselected when AppState.gear != g: {
+                            background: Theme.bg-panel;
+                            gear-label.color: Theme.text-primary;
+                            in { animate background { duration: 100ms; } }
+                        }
+                    ]
+                }
+            }
+
+            // Işık ve Fren
+            HorizontalLayout {
+                spacing: Theme.pad-xs;
+
+                // Işık toggle
+                light-rect := Rectangle {
+                    border-color: Theme.border;
+                    border-width: 1px;
+                    border-radius: Theme.radius;
+                    height: 30px;
+                    horizontal-stretch: 1;
+
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: Theme.pad-xs;
+                        padding-left: Theme.pad-xs;
+                        padding-right: Theme.pad-xs;
+
+                        Text {
+                            text: "💡";
+                            font-size: Theme.font-md;
+                            vertical-alignment: center;
+                        }
+                        light-label := Text {
+                            text: "IŞIK";
+                            font-size: Theme.font-sm;
+                            vertical-alignment: center;
+                        }
+                    }
+                    TouchArea {
+                        clicked => { root.set-light(!AppState.light-on); }
+                    }
+
+                    states [
+                        on when AppState.light-on: {
+                            background: Theme.accent-yellow;
+                            light-label.color: #1a1a2e;
+                            in { animate background { duration: 150ms; } }
+                        }
+                        off when !AppState.light-on: {
+                            background: Theme.bg-panel;
+                            light-label.color: Theme.text-dim;
+                            in { animate background { duration: 150ms; } }
+                        }
+                    ]
+                }
+
+                // Fren toggle
+                brake-rect := Rectangle {
+                    border-color: Theme.border;
+                    border-width: 1px;
+                    border-radius: Theme.radius;
+                    height: 30px;
+                    horizontal-stretch: 1;
+
+                    HorizontalLayout {
+                        alignment: center;
+                        spacing: Theme.pad-xs;
+                        padding-left: Theme.pad-xs;
+                        padding-right: Theme.pad-xs;
+
+                        Text {
+                            text: "🛑";
+                            font-size: Theme.font-md;
+                            vertical-alignment: center;
+                        }
+                        brake-label := Text {
+                            text: "FREN";
+                            font-size: Theme.font-sm;
+                            vertical-alignment: center;
+                        }
+                    }
+                    TouchArea {
+                        clicked => { root.set-brake(!AppState.brake-on); }
+                    }
+
+                    states [
+                        on when AppState.brake-on: {
+                            background: Theme.accent;
+                            brake-label.color: white;
+                            in { animate background { duration: 150ms; } }
+                        }
+                        off when !AppState.brake-on: {
+                            background: Theme.bg-panel;
+                            brake-label.color: Theme.text-dim;
+                            in { animate background { duration: 150ms; } }
+                        }
+                    ]
+                }
+            }
+
+            // Motor ters bağlantı (sırt sırta)
+            HorizontalLayout {
+                spacing: Theme.pad-xs;
+
+                // Sol ters
+                rev-l := Rectangle {
+                    border-color: Theme.border;
+                    border-width: 1px;
+                    border-radius: Theme.radius;
+                    height: 26px;
+                    horizontal-stretch: 1;
+
+                    rev-l-label := Text {
+                        text: "↺ Sol Ters";
+                        font-size: Theme.font-sm;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    TouchArea {
+                        clicked => {
+                            // Mutex: ikisi aynı anda aktif olamaz
+                            if (!AppState.reverse-left) {
+                                AppState.reverse-right = false;
+                            }
+                            root.set-reverse-l(!AppState.reverse-left);
+                        }
+                    }
+
+                    states [
+                        active when AppState.reverse-left: {
+                            background: Theme.accent-yellow;
+                            rev-l-label.color: #1a1a2e;
+                            in { animate background { duration: 120ms; } }
+                        }
+                        inactive when !AppState.reverse-left: {
+                            background: Theme.bg-panel;
+                            rev-l-label.color: Theme.text-dim;
+                            in { animate background { duration: 120ms; } }
+                        }
+                    ]
+                }
+
+                // Sağ ters
+                rev-r := Rectangle {
+                    border-color: Theme.border;
+                    border-width: 1px;
+                    border-radius: Theme.radius;
+                    height: 26px;
+                    horizontal-stretch: 1;
+
+                    rev-r-label := Text {
+                        text: "↻ Sağ Ters";
+                        font-size: Theme.font-sm;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    TouchArea {
+                        clicked => {
+                            if (!AppState.reverse-right) {
+                                AppState.reverse-left = false;
+                            }
+                            root.set-reverse-r(!AppState.reverse-right);
+                        }
+                    }
+
+                    states [
+                        active when AppState.reverse-right: {
+                            background: Theme.accent-yellow;
+                            rev-r-label.color: #1a1a2e;
+                            in { animate background { duration: 120ms; } }
+                        }
+                        inactive when !AppState.reverse-right: {
+                            background: Theme.bg-panel;
+                            rev-r-label.color: Theme.text-dim;
+                            in { animate background { duration: 120ms; } }
+                        }
+                    ]
+                }
+            }
+        }
+    }
+}

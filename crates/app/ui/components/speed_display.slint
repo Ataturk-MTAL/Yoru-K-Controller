@@ -1,0 +1,147 @@
+import { AppState } from "../state.slint";
+import { Theme }    from "../theme.slint";
+
+// Tek motor hız çubuğu bileşeni
+component SpeedBar {
+    in property <string> label: "L";
+    in property <int>    speed: 0;   // -100..100
+
+    height: 36px;
+
+    Rectangle {
+        background: Theme.bg-panel;
+        border-radius: Theme.radius;
+
+        HorizontalLayout {
+            padding: Theme.pad-xs;
+            spacing: Theme.pad-xs;
+            alignment: center;
+
+            // Etiket
+            Text {
+                text: label;
+                color: Theme.text-dim;
+                font-size: Theme.font-sm;
+                vertical-alignment: center;
+                width: 14px;
+                horizontal-alignment: center;
+            }
+
+            // Geri yön çubuğu (negatif hız)
+            Rectangle {
+                background: Theme.bg-card;
+                border-radius: Theme.radius;
+                horizontal-stretch: 1;
+                height: 12px;
+
+                // Geri hız doldurma (sağdan sola)
+                Rectangle {
+                    background: speed < 0 ? Theme.accent : transparent;
+                    border-radius: Theme.radius;
+                    width: speed < 0 ? (parent.width * (-speed / 100.0)) : 0px;
+                    x: parent.width - self.width;
+                    height: parent.height;
+                    animate width { duration: 80ms; }
+                }
+            }
+
+            // Merkez işareti
+            Rectangle {
+                width: 2px; height: 16px;
+                background: Theme.border;
+            }
+
+            // İleri yön çubuğu (pozitif hız)
+            Rectangle {
+                background: Theme.bg-card;
+                border-radius: Theme.radius;
+                horizontal-stretch: 1;
+                height: 12px;
+
+                Rectangle {
+                    background: speed > 0 ? Theme.accent-green : transparent;
+                    border-radius: Theme.radius;
+                    width: speed > 0 ? (parent.width * (speed / 100.0)) : 0px;
+                    height: parent.height;
+                    animate width { duration: 80ms; }
+                }
+            }
+
+            // Sayısal değer
+            Text {
+                text: (speed >= 0 ? "+" : "") + speed;
+                color: speed > 0 ? Theme.accent-green : (speed < 0 ? Theme.accent : Theme.text-dim);
+                font-size: Theme.font-sm;
+                vertical-alignment: center;
+                width: 32px;
+                horizontal-alignment: right;
+            }
+        }
+    }
+}
+
+export component SpeedDisplay {
+    Rectangle {
+        background: Theme.bg-card;
+        border-radius: Theme.radius;
+
+        VerticalLayout {
+            padding: Theme.pad-sm;
+            spacing: Theme.pad-xs;
+
+            Text {
+                text: "HIZ GÖSTERGESİ";
+                color: Theme.text-dim;
+                font-size: Theme.font-sm;
+                letter-spacing: 1.5px;
+            }
+
+            SpeedBar {
+                label: "Sol";
+                speed: AppState.left-speed;
+            }
+
+            SpeedBar {
+                label: "Sağ";
+                speed: AppState.right-speed;
+            }
+
+            // Vites göstergesi
+            HorizontalLayout {
+                alignment: center;
+                spacing: Theme.pad-sm;
+
+                Text {
+                    text: "Vites:";
+                    color: Theme.text-dim;
+                    font-size: Theme.font-sm;
+                    vertical-alignment: center;
+                }
+
+                Text {
+                    text: "V\{AppState.gear}";
+                    color: Theme.accent-yellow;
+                    font-size: Theme.font-lg;
+                    vertical-alignment: center;
+                }
+
+                Rectangle { horizontal-stretch: 1; }
+
+                // Motor durumu
+                Rectangle {
+                    width: 8px; height: 8px;
+                    border-radius: 4px;
+                    background: AppState.motor-running ? Theme.accent-green : Theme.text-disabled;
+                    animate background { duration: 200ms; }
+                }
+
+                Text {
+                    text: AppState.motor-running ? "Çalışıyor" : "Durdu";
+                    color: AppState.motor-running ? Theme.accent-green : Theme.text-disabled;
+                    font-size: Theme.font-sm;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}

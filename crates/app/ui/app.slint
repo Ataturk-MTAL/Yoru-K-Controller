@@ -1,0 +1,212 @@
+import { AppState }        from "state.slint";
+import { Theme }           from "theme.slint";
+import { ConnectionPanel } from "components/connection_panel.slint";
+import { MotorControl }    from "components/motor_control.slint";
+import { JoystickPanel }   from "components/joystick_panel.slint";
+import { SpeedDisplay }    from "components/speed_display.slint";
+import { CameraView }      from "components/camera_view.slint";
+
+export { AppState }
+
+export component AppWindow inherits Window {
+    title: "Yörü-K Kontrolcü";
+    background: Theme.bg-dark;
+    min-width:  1100px;
+    min-height: 680px;
+    preferred-width:  1280px;
+    preferred-height: 800px;
+
+    // ── Rust'a callback'ler ──────────────────────────────
+    callback connect-serial(string, int);    // port, baud
+    callback connect-tcp(string, int);       // host, port
+    callback disconnect();
+    callback refresh-ports();
+    callback send-start();
+    callback send-stop();
+    callback send-light(bool);
+    callback send-brake(bool);
+    callback set-gear(int);
+    callback set-reverse-left(bool);
+    callback set-reverse-right(bool);
+    callback joystick-moved(float, float, float);  // dx, dy, max_radius
+    callback joystick-released();
+    callback start-camera(int);
+    callback stop-camera();
+
+    // ── Klavye focus ─────────────────────────────────────
+    forward-focus: key-handler;
+
+    key-handler := FocusScope {
+        // ── Klavye basıldığında ──────────────────────────
+        key-pressed(e) => {
+            // Acil durdurma — Space
+            if (e.text == " ") {
+                root.send-stop();
+                return accept;
+            }
+            // Vites seçimi
+            if (e.text == "1") { root.set-gear(1); return accept; }
+            if (e.text == "2") { root.set-gear(2); return accept; }
+            if (e.text == "3") { root.set-gear(3); return accept; }
+            // Periferal
+            if (e.text == "l") { root.send-light(!AppState.light-on); return accept; }
+            if (e.text == "b") { root.send-brake(!AppState.brake-on); return accept; }
+            // WASD / Ok tuşları — Rust tarafında işlenir (invoke_from_event_loop ile hız hesaplanır)
+            if (e.text == "w" || e.text == Key.UpArrow)    { return accept; }
+            if (e.text == "s" || e.text == Key.DownArrow)  { return accept; }
+            if (e.text == "a" || e.text == Key.LeftArrow)  { return accept; }
+            if (e.text == "d" || e.text == Key.RightArrow) { return accept; }
+            reject
+        }
+        key-released(e) => {
+            if (e.text == "w" || e.text == Key.UpArrow)    { return accept; }
+            if (e.text == "s" || e.text == Key.DownArrow)  { return accept; }
+            if (e.text == "a" || e.text == Key.LeftArrow)  { return accept; }
+            if (e.text == "d" || e.text == Key.RightArrow) { return accept; }
+            reject
+        }
+
+        // ── Layout ──────────────────────────────────────
+        VerticalLayout {
+            spacing: 0px;
+
+            // ────────── Üst başlık çubuğu ───────────────
+            Rectangle {
+                height: 44px;
+                background: Theme.bg-card;
+                border-color: Theme.border;
+
+                HorizontalLayout {
+                    padding-left:  Theme.pad-md;
+                    padding-right: Theme.pad-md;
+                    alignment: center;
+
+                    // Logo / isim
+                    Text {
+                        text: "🤖 YÖRÜ-K";
+                        color: Theme.text-primary;
+                        font-size: Theme.font-lg;
+                        vertical-alignment: center;
+                        letter-spacing: 2px;
+                    }
+
+                    Rectangle { horizontal-stretch: 1; }
+
+                    // Klavye kısayolları ipucu
+                    Text {
+                        text: "WASD · Space=DUR · L=Işık · B=Fren · 1/2/3=Vites";
+                        color: Theme.text-disabled;
+                        font-size: Theme.font-sm;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            // ────────── Ana içerik alanı ─────────────────
+            HorizontalLayout {
+                vertical-stretch: 1;
+                spacing: 0px;
+
+                // SOL: Kamera görüntüsü (esnek genişlik)
+                CameraView {
+                    horizontal-stretch: 1;
+                    start-camera(i) => { root.start-camera(i); }
+                    stop-camera()   => { root.stop-camera(); }
+                }
+
+                // SAĞ: Kontrol paneli (sabit genişlik)
+                Rectangle {
+                    width:      Theme.panel-width;
+                    background: Theme.bg-panel;
+                    border-color: Theme.border;
+
+                    VerticalLayout {
+                        padding:  Theme.pad-sm;
+                        spacing:  Theme.pad-sm;
+                        vertical-stretch: 1;
+
+                        // 1. Bağlantı
+                        ConnectionPanel {
+                            connect-serial(p, b) => { root.connect-serial(p, b); }
+                            connect-tcp(h, p)    => { root.connect-tcp(h, p); }
+                            disconnect()         => { root.disconnect(); }
+                            refresh-ports()      => { root.refresh-ports(); }
+                        }
+
+                        // 2. Motor kontrol
+                        MotorControl {
+                            start()          => { root.send-start(); }
+                            stop()           => { root.send-stop(); }
+                            set-gear(g)      => { root.set-gear(g); }
+                            set-light(v)     => { root.send-light(v); }
+                            set-brake(v)     => { root.send-brake(v); }
+                            set-reverse-l(v) => { root.set-reverse-left(v); }
+                            set-reverse-r(v) => { root.set-reverse-right(v); }
+                        }
+
+                        // 3. Joystick
+                        JoystickPanel {
+                            moved(dx, dy, r) => { root.joystick-moved(dx, dy, r); }
+                            released()       => { root.joystick-released(); }
+                        }
+
+                        // 4. Hız göstergesi (esnek yükseklik)
+                        SpeedDisplay {
+                            vertical-stretch: 1;
+                        }
+                    }
+                }
+            }
+
+            // ────────── Alt durum çubuğu ─────────────────
+            Rectangle {
+                height: 26px;
+                background: Theme.bg-card;
+                border-color: Theme.border;
+
+                HorizontalLayout {
+                    padding-left:  Theme.pad-md;
+                    padding-right: Theme.pad-md;
+                    alignment: center;
+
+                    // Bağlantı indikatörü
+                    Rectangle {
+                        width: 8px; height: 8px;
+                        border-radius: 4px;
+                        background: AppState.connected ? Theme.accent-green : Theme.text-disabled;
+                        animate background { duration: 300ms; }
+                    }
+
+                    Rectangle { width: Theme.pad-sm; }
+
+                    // Durum metni
+                    Text {
+                        text: AppState.status-text;
+                        color: Theme.text-dim;
+                        font-size: Theme.font-sm;
+                        vertical-alignment: center;
+                    }
+
+                    Rectangle { horizontal-stretch: 1; }
+
+                    // Motor durumu
+                    if (AppState.motor-running): Text {
+                        text: "● Motor: Çalışıyor";
+                        color: Theme.accent-green;
+                        font-size: Theme.font-sm;
+                        vertical-alignment: center;
+                    }
+
+                    Rectangle { width: Theme.pad-md; }
+
+                    Text {
+                        text: "v0.1.0";
+                        color: Theme.text-disabled;
+                        font-size: Theme.font-sm;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+        }
+    }
+}

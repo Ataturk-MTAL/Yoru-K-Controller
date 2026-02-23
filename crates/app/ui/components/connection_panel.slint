@@ -1,0 +1,243 @@
+import { AppState } from "../state.slint";
+import { Theme }    from "../theme.slint";
+
+export component ConnectionPanel {
+    callback connect-serial(string, int);   // port, baud
+    callback connect-tcp(string, int);      // host, port
+    callback disconnect();
+    callback refresh-ports();
+
+    Rectangle {
+        background: Theme.bg-card;
+        border-radius: Theme.radius;
+        padding: Theme.pad-sm;
+
+        VerticalLayout {
+            padding: Theme.pad-sm;
+            spacing: Theme.pad-xs;
+
+            // Başlık
+            Text {
+                text: "BAĞLANTI";
+                color: Theme.text-dim;
+                font-size: Theme.font-sm;
+                letter-spacing: 1.5px;
+            }
+
+            // Mod seçici
+            HorizontalLayout {
+                spacing: Theme.pad-xs;
+
+                serial-btn := Rectangle {
+                    border-radius: Theme.radius;
+                    height: 28px;
+                    horizontal-stretch: 1;
+
+                    Text {
+                        text: "Serial";
+                        color: Theme.text-primary;
+                        font-size: Theme.font-md;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    TouchArea {
+                        clicked => { AppState.is-serial = true; }
+                    }
+
+                    states [
+                        active when AppState.is-serial: {
+                            background: Theme.accent;
+                            in { animate background { duration: 150ms; } }
+                        }
+                        inactive when !AppState.is-serial: {
+                            background: Theme.bg-panel;
+                            in { animate background { duration: 150ms; } }
+                        }
+                    ]
+                }
+
+                tcp-btn := Rectangle {
+                    border-radius: Theme.radius;
+                    height: 28px;
+                    horizontal-stretch: 1;
+
+                    Text {
+                        text: "TCP/IP";
+                        color: Theme.text-primary;
+                        font-size: Theme.font-md;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    TouchArea {
+                        clicked => { AppState.is-serial = false; }
+                    }
+
+                    states [
+                        active when !AppState.is-serial: {
+                            background: Theme.accent;
+                            in { animate background { duration: 150ms; } }
+                        }
+                        inactive when AppState.is-serial: {
+                            background: Theme.bg-panel;
+                            in { animate background { duration: 150ms; } }
+                        }
+                    ]
+                }
+            }
+
+            // Serial ayarları
+            if (AppState.is-serial): VerticalLayout {
+                spacing: Theme.pad-xs;
+
+                HorizontalLayout {
+                    spacing: Theme.pad-xs;
+                    alignment: center;
+
+                    Text {
+                        text: "Port:";
+                        color: Theme.text-dim;
+                        font-size: Theme.font-sm;
+                        vertical-alignment: center;
+                        width: 38px;
+                    }
+
+                    port-input := Rectangle {
+                        background: Theme.bg-panel;
+                        border-color: Theme.border;
+                        border-width: 1px;
+                        border-radius: Theme.radius;
+                        height: 26px;
+                        horizontal-stretch: 1;
+
+                        Text {
+                            text: AppState.serial-port == "" ? "/dev/tty... veya COM" : AppState.serial-port;
+                            color: AppState.serial-port == "" ? Theme.text-disabled : Theme.text-primary;
+                            font-size: Theme.font-sm;
+                            vertical-alignment: center;
+                            padding-left: Theme.pad-xs;
+                        }
+                    }
+
+                    refresh-btn := Rectangle {
+                        background: Theme.bg-panel;
+                        border-color: Theme.border;
+                        border-width: 1px;
+                        border-radius: Theme.radius;
+                        width: 28px; height: 26px;
+
+                        Text {
+                            text: "↻";
+                            color: Theme.text-primary;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                        TouchArea {
+                            clicked => { root.refresh-ports(); }
+                        }
+                    }
+                }
+            }
+
+            // TCP ayarları
+            if (!AppState.is-serial): VerticalLayout {
+                spacing: Theme.pad-xs;
+
+                HorizontalLayout {
+                    spacing: Theme.pad-xs;
+                    alignment: center;
+
+                    Text {
+                        text: "Host:";
+                        color: Theme.text-dim;
+                        font-size: Theme.font-sm;
+                        vertical-alignment: center;
+                        width: 38px;
+                    }
+
+                    Rectangle {
+                        background: Theme.bg-panel;
+                        border-color: Theme.border;
+                        border-width: 1px;
+                        border-radius: Theme.radius;
+                        height: 26px;
+                        horizontal-stretch: 1;
+
+                        Text {
+                            text: AppState.tcp-host;
+                            color: Theme.text-primary;
+                            font-size: Theme.font-sm;
+                            vertical-alignment: center;
+                            padding-left: Theme.pad-xs;
+                        }
+                    }
+
+                    Text {
+                        text: ":\{AppState.tcp-port}";
+                        color: Theme.text-dim;
+                        font-size: Theme.font-sm;
+                        vertical-alignment: center;
+                    }
+                }
+            }
+
+            // Bağlan / Kes butonu
+            connect-rect := Rectangle {
+                border-radius: Theme.radius;
+                height: 32px;
+
+                Text {
+                    text: AppState.connected ? "BAĞLANTIYI KES" : "BAĞLAN";
+                    color: white;
+                    font-size: Theme.font-md;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+
+                states [
+                    connected when AppState.connected: {
+                        background: Theme.accent;
+                        in { animate background { duration: 300ms; } }
+                    }
+                    disconnected when !AppState.connected: {
+                        background: Theme.accent-green;
+                        in { animate background { duration: 300ms; } }
+                    }
+                ]
+
+                touch := TouchArea {
+                    clicked => {
+                        if (AppState.connected) {
+                            root.disconnect();
+                        } else if (AppState.is-serial) {
+                            root.connect-serial(AppState.serial-port, AppState.baud-rate);
+                        } else {
+                            root.connect-tcp(AppState.tcp-host, AppState.tcp-port);
+                        }
+                    }
+                }
+            }
+
+            // Durum indikatörü
+            HorizontalLayout {
+                spacing: Theme.pad-xs;
+                alignment: center;
+
+                Rectangle {
+                    width: 8px; height: 8px;
+                    border-radius: 4px;
+                    background: AppState.connected ? Theme.accent-green : Theme.text-disabled;
+                    animate background { duration: 200ms; }
+                }
+
+                Text {
+                    text: AppState.connected
+                        ? (AppState.is-serial ? "Seri Port" : "TCP/IP") + " — Bağlı"
+                        : "Bağlantı yok";
+                    color: AppState.connected ? Theme.accent-green : Theme.text-disabled;
+                    font-size: Theme.font-sm;
+                    vertical-alignment: center;
+                }
+            }
+        }
+    }
+}
