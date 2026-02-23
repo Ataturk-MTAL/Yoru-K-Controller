@@ -55,8 +55,8 @@ impl YoloDetector {
         let mut input_data: Vec<f32> = vec![0.0; 3 * sz * sz];
         for (y, row) in resized.rows().enumerate() {
             for (x, pixel) in row.enumerate() {
-                input_data[0 * sz * sz + y * sz + x] = pixel[0] as f32 / 255.0;
-                input_data[1 * sz * sz + y * sz + x] = pixel[1] as f32 / 255.0;
+                input_data[y * sz + x] = pixel[0] as f32 / 255.0;
+                input_data[sz * sz + y * sz + x] = pixel[1] as f32 / 255.0;
                 input_data[2 * sz * sz + y * sz + x] = pixel[2] as f32 / 255.0;
             }
         }
@@ -83,8 +83,8 @@ impl YoloDetector {
 
         for i in 0..num_anchors {
             // row-major: data[feature * num_anchors + anchor]
-            let cx = data[0 * num_anchors + i];
-            let cy = data[1 * num_anchors + i];
+            let cx = data[i];
+            let cy = data[num_anchors + i];
             let w  = data[2 * num_anchors + i];
             let h  = data[3 * num_anchors + i];
 

@@ -1,4 +1,3 @@
 /target/
-Cargo.lock
 assets/*.onnx
 .DS_Store

@@ -11,8 +11,7 @@ use std::{
 use slint::Global;
 
 use control::joystick::{JoystickInput, MotorSpeeds};
-use control::keyboard::KeyboardState;
-use control::{joystick_calculate, keyboard_calculate};
+use control::joystick_calculate;
 use protocol::{speed_packet, RobotResponse};
 use transport::{ConnectionManager, RobotEvent};
 use vision::camera::RgbaFrame;
@@ -23,7 +22,6 @@ use crate::AppState;
 /// Paylaşılan uygulama durumu (thread'ler arası)
 pub struct SharedState {
     pub speeds:         Arc<Mutex<MotorSpeeds>>,
-    pub keyboard:       Arc<Mutex<KeyboardState>>,
     pub gear:           Arc<AtomicU8>,
     pub motor_running:  Arc<AtomicBool>,
     pub reverse_left:   Arc<AtomicBool>,
@@ -35,7 +33,6 @@ impl SharedState {
     pub fn new(connection: ConnectionManager) -> Self {
         Self {
             speeds:        Arc::new(Mutex::new(MotorSpeeds::default())),
-            keyboard:      Arc::new(Mutex::new(KeyboardState::default())),
             gear:          Arc::new(AtomicU8::new(1)),
             motor_running: Arc::new(AtomicBool::new(false)),
             reverse_left:  Arc::new(AtomicBool::new(false)),
@@ -157,13 +154,6 @@ pub fn run_periodic_send(state: Arc<SharedState>) {
             }
         })
         .expect("periodic-send thread başlatılamadı");
-}
-
-/// Klavye durumundan motor hızlarını günceller
-pub fn update_keyboard_speeds(state: &SharedState) {
-    let kb = *state.keyboard.lock().unwrap();
-    let s  = keyboard_calculate(&kb);
-    *state.speeds.lock().unwrap() = s;
 }
 
 /// Joystick girdisinden motor hızlarını günceller

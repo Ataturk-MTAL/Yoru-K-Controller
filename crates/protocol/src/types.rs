@@ -26,8 +26,9 @@ pub enum Command {
 }
 
 /// Vites seçimi
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum Gear {
+    #[default]
     V1 = 1,
     V2 = 2,
     V3 = 3,
@@ -39,8 +40,3 @@ impl Gear {
     }
 }
 
-impl Default for Gear {
-    fn default() -> Self {
-        Gear::V1
-    }
-}
