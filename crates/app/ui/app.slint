@@ -121,7 +121,7 @@ export component AppWindow inherits Window {
                     // ── Sekme başlıkları ─────────────────
                     Rectangle {
                         height: 36px;
-                        background: Theme.bg-panel;
+                        background: #0d1829;
                         border-color: Theme.border;
 
                         HorizontalLayout {
@@ -132,21 +132,22 @@ export component AppWindow inherits Window {
 
                             // Tab 0: Kamera
                             cam-tab := Rectangle {
-                                width: 110px;
+                                width: 120px;
                                 height: parent.height;
                                 background: AppState.active-tab == 0
-                                    ? Theme.bg-dark : transparent;
-                                border-radius: 0px;
+                                    ? Theme.bg-dark : #0d1829;
+                                animate background { duration: 150ms; }
 
                                 HorizontalLayout {
                                     alignment: center;
                                     spacing: Theme.pad-xs;
                                     Text {
-                                        text: "📷 Kamera";
+                                        text: "Kamera";
                                         color: AppState.active-tab == 0
                                             ? Theme.text-primary : Theme.text-dim;
-                                        font-size: Theme.font-sm;
+                                        font-size: Theme.font-md;
                                         vertical-alignment: center;
+                                        animate color { duration: 150ms; }
                                     }
                                 }
                                 // Alt çizgi aktif göstergesi
@@ -165,27 +166,28 @@ export component AppWindow inherits Window {
 
                             // Tab 1: Harita
                             map-tab := Rectangle {
-                                width: 110px;
+                                width: 120px;
                                 height: parent.height;
                                 background: AppState.active-tab == 1
-                                    ? Theme.bg-dark : transparent;
+                                    ? Theme.bg-dark : #0d1829;
+                                animate background { duration: 150ms; }
 
                                 HorizontalLayout {
                                     alignment: center;
                                     spacing: Theme.pad-xs;
                                     Text {
-                                        text: "🛰 Harita";
+                                        text: "Harita";
                                         color: AppState.active-tab == 1
                                             ? Theme.text-primary : Theme.text-dim;
-                                        font-size: Theme.font-sm;
+                                        font-size: Theme.font-md;
                                         vertical-alignment: center;
+                                        animate color { duration: 150ms; }
                                     }
                                     // GPS aktifken küçük yeşil nokta
                                     if (AppState.gps-active): Rectangle {
-                                        width: 6px; height: 6px;
-                                        border-radius: 3px;
+                                        width: 7px; height: 7px;
+                                        border-radius: 4px;
                                         background: Theme.accent-green;
-                                        y: parent.height / 2 - self.height / 2 - 4px;
                                     }
                                 }
                                 Rectangle {
