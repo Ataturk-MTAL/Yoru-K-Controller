@@ -6,7 +6,7 @@ import { JoystickPanel }   from "components/joystick_panel.slint";
 import { SpeedDisplay }    from "components/speed_display.slint";
 import { CameraView }      from "components/camera_view.slint";
 import { MapView }         from "components/map_view.slint";
-import { TabWidget, Palette } from "std-widgets.slint";
+import { Palette }         from "std-widgets.slint";
 
 export { AppState }
 
@@ -34,8 +34,10 @@ export component AppWindow inherits Window {
     callback joystick-released();
     callback start-camera(int);
     callback stop-camera();
+    callback refresh-cameras();
     callback enable-gps();
     callback disable-gps();
+    callback set-detection-enabled(bool);
 
     // Dark tema zorla — tüm native widgetları (Button, ComboBox, SpinBox vb.) etkiler
     init => { Palette.color-scheme = ColorScheme.dark; }
@@ -108,7 +110,6 @@ export component AppWindow inherits Window {
                 HorizontalLayout {
                     padding-left:  Theme.pad-md;
                     padding-right: Theme.pad-md;
-                    alignment: center;
 
                     Text {
                         text: "🤖 YÖRÜ-K";
@@ -118,8 +119,48 @@ export component AppWindow inherits Window {
                         letter-spacing: 2px;
                     }
 
+                    // ── Sekme butonları (başlık çubuğu ortası) ──
                     Rectangle { horizontal-stretch: 1; }
 
+                    // Kamera sekmesi
+                    Rectangle {
+                        width: 90px;
+                        background: AppState.active-tab == 0 ? Theme.accent : transparent;
+                        border-radius: Theme.radius;
+                        animate background { duration: 150ms; }
+
+                        Text {
+                            text: "📷 Kamera";
+                            color: AppState.active-tab == 0 ? Theme.text-primary : Theme.text-dim;
+                            font-size: Theme.font-sm;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                        TouchArea { clicked => { AppState.active-tab = 0; } }
+                    }
+
+                    Rectangle { width: 4px; }
+
+                    // Harita sekmesi
+                    Rectangle {
+                        width: 90px;
+                        background: AppState.active-tab == 1 ? Theme.accent : transparent;
+                        border-radius: Theme.radius;
+                        animate background { duration: 150ms; }
+
+                        Text {
+                            text: "🛰 Harita";
+                            color: AppState.active-tab == 1 ? Theme.text-primary : Theme.text-dim;
+                            font-size: Theme.font-sm;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                        TouchArea { clicked => { AppState.active-tab = 1; } }
+                    }
+
+                    Rectangle { horizontal-stretch: 1; }
+
+                    // ── Durum göstergeleri ──────────────────────
                     Rectangle {
                         width: 8px; height: 8px;
                         border-radius: 4px;
@@ -163,26 +204,21 @@ export component AppWindow inherits Window {
                 vertical-stretch: 1;
                 spacing: 0px;
 
-                // ══ SOL PANEL: TabWidget ══════════════════
-                TabWidget {
+                // ══ SOL PANEL: Kamera / Harita ════════════
+                // if/else ile sekme — CameraView/MapView kendi içinde
+                // tam genişlik/yükseklik alır, overlay butonları kendisi yönetir
+                if (AppState.active-tab == 0): CameraView {
                     horizontal-stretch: 1;
-                    current-index <=> AppState.active-tab;
+                    start-camera(i)             => { root.start-camera(i); }
+                    stop-camera()               => { root.stop-camera(); }
+                    refresh-cameras()           => { root.refresh-cameras(); }
+                    set-detection-enabled(v)    => { root.set-detection-enabled(v); }
+                }
 
-                    Tab {
-                        title: "Kamera";
-                        CameraView {
-                            start-camera(i) => { root.start-camera(i); }
-                            stop-camera()   => { root.stop-camera(); }
-                        }
-                    }
-
-                    Tab {
-                        title: "Harita";
-                        MapView {
-                            enable-gps()  => { root.enable-gps(); }
-                            disable-gps() => { root.disable-gps(); }
-                        }
-                    }
+                if (AppState.active-tab == 1): MapView {
+                    horizontal-stretch: 1;
+                    enable-gps()  => { root.enable-gps(); }
+                    disable-gps() => { root.disable-gps(); }
                 }
 
                 // ══ SAĞ PANEL: Kontrol ════════════════════
@@ -190,6 +226,7 @@ export component AppWindow inherits Window {
                     width: Theme.panel-width;
                     background: Theme.bg-panel;
                     border-color: Theme.border;
+                    border-width: 1px;
 
                     VerticalLayout {
                         padding:  Theme.pad-sm;

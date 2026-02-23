@@ -5,11 +5,37 @@ edition = "2021"
 
 [dependencies]
 nokhwa    = { workspace = true }
-ort       = { workspace = true }
 image     = { workspace = true }
 imageproc = { workspace = true }
 ab_glyph  = { workspace = true }
-ndarray   = { workspace = true }
 anyhow    = { workspace = true }
 thiserror = { workspace = true }
 tracing   = { workspace = true }
+
+# usls: platform bazlı EP otomatik seçimi — --features flag gerekmez
+# macOS   → CoreML (ANE/GPU)
+# Windows → DirectML (GPU)
+# Linux   → CPU
+
+[target.'cfg(target_os = "macos")'.dependencies]
+usls = { version = "0.2.0-alpha.3", default-features = false, features = [
+    "ort-download-binaries",
+    "vision",
+    "annotator",
+    "coreml",
+] }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+usls = { version = "0.2.0-alpha.3", default-features = false, features = [
+    "ort-download-binaries",
+    "vision",
+    "annotator",
+    "directml",
+] }
+
+[target.'cfg(not(any(target_os = "macos", target_os = "windows")))'.dependencies]
+usls = { version = "0.2.0-alpha.3", default-features = false, features = [
+    "ort-download-binaries",
+    "vision",
+    "annotator",
+] }

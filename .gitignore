@@ -1,3 +1,8 @@
 /target/
-assets/*.onnx
+*.onnx
+*.pt
 .DS_Store
+
+# CoreML compiled model cache
+*.mlmodelc/
+*.mlpackage/

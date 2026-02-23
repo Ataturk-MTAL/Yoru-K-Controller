@@ -1,8 +1,7 @@
-use anyhow::{anyhow, Result};
-use image::{ImageBuffer, Rgb, Rgba};
-use ort::session::{Session, builder::GraphOptimizationLevel};
+use anyhow::Result;
+use usls::{models::YOLO, Config, Model, ORTConfig, Runtime, Scale, Version, Y};
 
-/// Nesne tespiti sonucu
+/// Nesne tespiti sonucu (bizim ara format — bridge.rs'e geçirilir)
 #[derive(Debug, Clone)]
 pub struct Detection {
     pub x1:         f32,
@@ -11,159 +10,112 @@ pub struct Detection {
     pub y2:         f32,
     pub confidence: f32,
     pub class_id:   usize,
+    pub class_name: String,
 }
 
-/// YOLOv8 ONNX dedektörü
+/// usls YOLO dedektörü
 pub struct YoloDetector {
-    session:        Session,
-    pub conf_thr:   f32,
-    pub iou_thr:    f32,
+    runtime: Runtime<YOLO>,
 }
-
-const INPUT_SIZE: u32 = 640;
 
 impl YoloDetector {
-    /// ONNX model dosyasından dedektör oluşturur
-    pub fn new(model_path: &str) -> Result<Self> {
-        let session = Session::builder()?
-            .with_optimization_level(GraphOptimizationLevel::Level3)?
-            .with_intra_threads(4)?
-            .commit_from_file(model_path)
-            .map_err(|e| anyhow!("Model yüklenemedi: {e}"))?;
+    /// Platform'a göre en iyi execution provider seçer.
+    /// Cargo.toml'daki platform bazlı usls feature'larıyla eşleşir:
+    ///   macOS   → CoreML (ANE/GPU)
+    ///   Windows → DirectML (GPU)
+    ///   Linux   → CPU
+    fn best_device() -> usls::Device {
+        #[cfg(target_os = "macos")]
+        { return usls::Device::CoreMl; }
 
-        Ok(Self { session, conf_thr: 0.5, iou_thr: 0.45 })
+        #[cfg(target_os = "windows")]
+        { return usls::Device::DirectMl(0); }
+
+        #[allow(unreachable_code)]
+        usls::Device::Cpu(0)
     }
 
-    /// RGBA8 frame üzerinde nesne tespiti yapar
+    /// ONNX model dosyasından dedektör oluşturur.
+    /// `model_path`: yerel dosya yolu veya "" (usls hub'dan otomatik indirir)
+    pub fn new(model_path: &str) -> Result<Self> {
+        let device = Self::best_device();
+        eprintln!("[detection] Execution provider: {:?}", device);
+
+        // macOS CoreML: 1 dry-run → model ANE/GPU için JIT compile edilir
+        // Diğer: 0 dry-run (ORT dynamic shape Concat bug workaround)
+        #[cfg(target_os = "macos")]
+        let num_dry: usize = 1;
+        #[cfg(not(target_os = "macos"))]
+        let num_dry: usize = 0;
+
+        let ort_cfg = ORTConfig::default()
+            .with_file(model_path)
+            .with_device(device)
+            .with_dtype(usls::DType::Fp32)
+            .with_num_dry_run(num_dry)
+            .with_num_intra_threads(2)
+            .with_num_inter_threads(1);
+
+        // YOLO26: end-to-end NMS, output [1, 300, 6]
+        // with_model_ixx: sabit 640×640 — ORT/CoreML static shape için zorunlu
+        let mut config = Config::yolo_detect()
+            .with_version(Version::from(26_u8))
+            .with_scale(Scale::N)
+            .with_model(ort_cfg)
+            .with_model_ixx(0, 0, 1)    // batch = 1
+            .with_model_ixx(0, 1, 3)    // channels = 3 (RGB)
+            .with_model_ixx(0, 2, 640)  // height = 640
+            .with_model_ixx(0, 3, 640)  // width = 640
+            .with_class_confs(&[0.5]);
+
+        // macOS CoreML: ANE için optimize
+        // compute_units=2 → CPUAndNeuralEngine
+        // static_input_shapes=true → sabit 640×640 ile graph compile
+        // model_format=0 → MLProgram (Apple Silicon için optimize)
+        #[cfg(target_os = "macos")]
+        {
+            config = config
+                .with_model_coreml_static_input_shapes(true)
+                .with_model_coreml_compute_units(2)
+                .with_model_coreml_model_format(0);
+        }
+
+        let config = config.commit()?;
+        let runtime = YOLO::new(config)?;
+        Ok(Self { runtime })
+    }
+
+    /// RGBA8 frame üzerinde nesne tespiti yapar.
     /// Döndürür: orijinal koordinatlara ölçeklendirilmiş Detection listesi
     pub fn detect(&mut self, frame_rgba: &[u8], orig_w: u32, orig_h: u32) -> Result<Vec<Detection>> {
-        // 1. RGBA → RGB
-        let rgb_img: ImageBuffer<Rgb<u8>, Vec<u8>> = {
-            let rgba = ImageBuffer::<Rgba<u8>, _>::from_raw(orig_w, orig_h, frame_rgba.to_vec())
-                .ok_or_else(|| anyhow!("Frame boyutu hatalı"))?;
-            ImageBuffer::from_fn(orig_w, orig_h, |x, y| {
-                let p = rgba.get_pixel(x, y);
-                Rgb([p[0], p[1], p[2]])
-            })
-        };
+        // RGBA → RGB (usls Image::from_u8s RGB bekliyor: width×height×3)
+        let rgb_bytes: Vec<u8> = frame_rgba.chunks_exact(4)
+            .flat_map(|p| [p[0], p[1], p[2]])
+            .collect();
 
-        // 2. Letterbox resize: 640×640, aspect-ratio koruyarak
-        let (resized, scale, pad_x, pad_y) = letterbox(&rgb_img, INPUT_SIZE);
+        let img = usls::Image::from_u8s(&rgb_bytes, orig_w, orig_h)?;
 
-        // 3. HWC → CHW, normalize 0–255 → 0.0–1.0 → flat Vec<f32>
-        let sz = INPUT_SIZE as usize;
-        let mut input_data: Vec<f32> = vec![0.0; 3 * sz * sz];
-        for (y, row) in resized.rows().enumerate() {
-            for (x, pixel) in row.enumerate() {
-                input_data[y * sz + x] = pixel[0] as f32 / 255.0;
-                input_data[sz * sz + y * sz + x] = pixel[1] as f32 / 255.0;
-                input_data[2 * sz * sz + y * sz + x] = pixel[2] as f32 / 255.0;
+        // usls inference — letterbox + normalize + NMS + decode içerde
+        let results: Vec<Y> = self.runtime.forward(&[img])?;
+
+        let mut detections = Vec::new();
+        if let Some(y) = results.into_iter().next() {
+            for hbb in &y.hbbs {
+                // usls Hbb: x, y, w, h (top-left origin) → f32
+                let x1 = hbb.x();
+                let y1 = hbb.y();
+                let x2 = x1 + hbb.w();
+                let y2 = y1 + hbb.h();
+
+                // confidence ve id Option<T> döndürür
+                let confidence = hbb.confidence().unwrap_or(0.0);
+                let class_id   = hbb.id().unwrap_or(0);
+                let class_name = hbb.name().unwrap_or("?").to_string();
+
+                detections.push(Detection { x1, y1, x2, y2, confidence, class_id, class_name });
             }
         }
 
-        // 4. ORT inference — (shape_vec, data) API
-        let shape: Vec<i64> = vec![1, 3, sz as i64, sz as i64];
-        let input_tensor = ort::value::Tensor::<f32>::from_array((shape, input_data))?;
-        let outputs = self.session.run(ort::inputs!["images" => input_tensor])?;
-
-        // try_extract_tensor döner: (&Shape, &[T])
-        // Shape: [i64] dizisi
-        let (out_shape, data) = outputs["output0"].try_extract_tensor::<f32>()?;
-
-        // 5. YOLOv8 çıktı: shape = [1, 84, 8400]
-        if out_shape.len() < 3 {
-            return Err(anyhow!("Beklenmedik çıktı şekli: {:?}", out_shape));
-        }
-
-        let num_features = out_shape[1] as usize; // 84
-        let num_anchors  = out_shape[2] as usize; // 8400
-        let num_classes  = num_features.saturating_sub(4);
-
-        let mut detections: Vec<Detection> = Vec::new();
-
-        for i in 0..num_anchors {
-            // row-major: data[feature * num_anchors + anchor]
-            let cx = data[i];
-            let cy = data[num_anchors + i];
-            let w  = data[2 * num_anchors + i];
-            let h  = data[3 * num_anchors + i];
-
-            // En yüksek class confidence
-            let (class_id, conf) = (0..num_classes)
-                .map(|c| (c, data[(4 + c) * num_anchors + i]))
-                .max_by(|a, b| a.1.partial_cmp(&b.1).unwrap())
-                .unwrap_or((0, 0.0f32));
-
-            if conf < self.conf_thr { continue; }
-
-            // cx/cy/w/h (640px) → x1/y1/x2/y2 (orijinal koordinatlar)
-            let x1_pad = cx - w / 2.0;
-            let y1_pad = cy - h / 2.0;
-            let x2_pad = cx + w / 2.0;
-            let y2_pad = cy + h / 2.0;
-
-            let x1 = ((x1_pad - pad_x) / scale).clamp(0.0, orig_w as f32);
-            let y1 = ((y1_pad - pad_y) / scale).clamp(0.0, orig_h as f32);
-            let x2 = ((x2_pad - pad_x) / scale).clamp(0.0, orig_w as f32);
-            let y2 = ((y2_pad - pad_y) / scale).clamp(0.0, orig_h as f32);
-
-            detections.push(Detection { x1, y1, x2, y2, confidence: conf, class_id });
-        }
-
-        // 6. NMS
-        Ok(nms(detections, self.iou_thr))
+        Ok(detections)
     }
-}
-
-/// Letterbox: görüntüyü aspect-ratio koruyarak `size`×`size` alana sığdırır
-/// Döndürür: (yeniden boyutlandırılmış görüntü, ölçek faktörü, x padding, y padding)
-fn letterbox(img: &ImageBuffer<Rgb<u8>, Vec<u8>>, size: u32) -> (ImageBuffer<Rgb<u8>, Vec<u8>>, f32, f32, f32) {
-    let (w, h) = (img.width(), img.height());
-    let scale  = (size as f32 / w as f32).min(size as f32 / h as f32);
-    let new_w  = (w as f32 * scale) as u32;
-    let new_h  = (h as f32 * scale) as u32;
-    let pad_x  = (size - new_w) as f32 / 2.0;
-    let pad_y  = (size - new_h) as f32 / 2.0;
-
-    let resized = image::imageops::resize(img, new_w, new_h, image::imageops::FilterType::Lanczos3);
-
-    let mut canvas = ImageBuffer::from_pixel(size, size, Rgb([114u8, 114, 114]));
-    image::imageops::overlay(&mut canvas, &resized, pad_x as i64, pad_y as i64);
-
-    (canvas, scale, pad_x, pad_y)
-}
-
-/// IoU (Intersection over Union) hesaplar
-fn iou(a: &Detection, b: &Detection) -> f32 {
-    let ix1 = a.x1.max(b.x1);
-    let iy1 = a.y1.max(b.y1);
-    let ix2 = a.x2.min(b.x2);
-    let iy2 = a.y2.min(b.y2);
-
-    let inter = (ix2 - ix1).max(0.0) * (iy2 - iy1).max(0.0);
-    let area_a = (a.x2 - a.x1) * (a.y2 - a.y1);
-    let area_b = (b.x2 - b.x1) * (b.y2 - b.y1);
-    let union  = area_a + area_b - inter;
-
-    if union > 0.0 { inter / union } else { 0.0 }
-}
-
-/// Non-Maximum Suppression
-fn nms(mut detections: Vec<Detection>, iou_thr: f32) -> Vec<Detection> {
-    detections.sort_by(|a, b| b.confidence.partial_cmp(&a.confidence).unwrap());
-    let mut suppressed = vec![false; detections.len()];
-    let mut keep = Vec::new();
-
-    for i in 0..detections.len() {
-        if suppressed[i] { continue; }
-        keep.push(detections[i].clone());
-        for j in (i + 1)..detections.len() {
-            if detections[i].class_id == detections[j].class_id
-                && iou(&detections[i], &detections[j]) > iou_thr
-            {
-                suppressed[j] = true;
-            }
-        }
-    }
-    keep
 }

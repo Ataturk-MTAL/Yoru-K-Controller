@@ -23,10 +23,15 @@ export global AppState {
     in-out property <bool>  brake-on:  false;
 
     // ── Kamera ──────────────────────────────────────────
-    in-out property <image> camera-frame;
-    in-out property <bool>  camera-running: false;
-    in-out property <int>   camera-fps:     0;
-    in-out property <int>   camera-index:   0;
+    in-out property <image>    camera-frame;
+    in-out property <bool>     camera-running:    false;
+    in-out property <int>      camera-fps:        0;
+    in-out property <int>      camera-index:      0;
+    in-out property <[string]> available-cameras: [];  // "0: FaceTime HD Camera" formatında
+    in-out property <string>   camera-error:      "";  // Hata mesajı (boşsa hata yok)
+    in-out property <image>    detection-frame;        // Bounding box overlay frame
+    in-out property <bool>     detection-enabled: false;
+    in-out property <int>      detection-count:   0;  // Tespit edilen nesne sayısı
 
     // ── GPS / Harita ─────────────────────────────────────
     in-out property <bool>  gps-active:      false;  // GPS yayını açık mı?

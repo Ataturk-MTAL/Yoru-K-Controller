@@ -1,14 +1,19 @@
-import { AppState } from "../state.slint";
-import { Theme }    from "../theme.slint";
+import { AppState }  from "../state.slint";
+import { Theme }     from "../theme.slint";
+import { ComboBox }  from "std-widgets.slint";
 
 export component CameraView {
-    callback start-camera(int);   // index
+    callback start-camera(int);
     callback stop-camera();
+    callback refresh-cameras();
+    callback set-detection-enabled(bool);
 
     Rectangle {
         background: #0a0a0a;
 
-        // Kamera görüntüsü
+        // ── Kamera görüntüsü ─────────────────────────────
+        // Detection kapalı: 30fps ham frame
+        // Detection açık: bbox çizili frame (~3fps) — Rust'ta camera_frame'e yazılır
         if (AppState.camera-running): Image {
             source: AppState.camera-frame;
             image-fit: contain;
@@ -16,7 +21,7 @@ export component CameraView {
             height: parent.height;
         }
 
-        // Kamera kapalıysa yer tutucu
+        // ── Kamera kapalıysa yer tutucu ──────────────────
         if (!AppState.camera-running): VerticalLayout {
             alignment: center;
             spacing: Theme.pad-md;
@@ -33,73 +38,143 @@ export component CameraView {
                 font-size: Theme.font-lg;
                 horizontal-alignment: center;
             }
-            Text {
-                text: "Sağ panelden kamerayı başlatın";
-                color: Theme.text-disabled;
+            if (AppState.camera-error != ""): Text {
+                text: AppState.camera-error;
+                color: Theme.accent;
                 font-size: Theme.font-sm;
                 horizontal-alignment: center;
             }
         }
 
-        // FPS göstergesi (sağ üst)
-        if (AppState.camera-running): Rectangle {
+        // ── Sağ üst: FPS + Tespit sayısı ─────────────────
+        if (AppState.camera-running): HorizontalLayout {
             x: parent.width - self.width - 8px;
             y: 8px;
-            width: 72px; height: 22px;
-            background: #00000088;
-            border-radius: 4px;
-
-            Text {
-                text: "\{AppState.camera-fps} FPS";
-                color: AppState.camera-fps >= 20 ? Theme.accent-green : Theme.accent;
-                font-size: Theme.font-sm;
-                horizontal-alignment: center;
-                vertical-alignment: center;
-            }
-        }
-
-        // Kamera kontrol butonları (sol alt köşe)
-        HorizontalLayout {
-            y: parent.height - self.height - 8px;
-            x: 8px;
             spacing: Theme.pad-xs;
-            width: 200px;
-            height: 32px;
+            width: self.preferred-width;
+            height: 22px;
 
-            // Başlat / Durdur
-            cam-btn := Rectangle {
-                background: AppState.camera-running ? Theme.accent : Theme.accent-green;
-                border-radius: Theme.radius;
-                horizontal-stretch: 1;
-                animate background { duration: 150ms; }
-
+            // FPS
+            Rectangle {
+                width: 72px;
+                background: #00000088;
+                border-radius: 4px;
                 Text {
-                    text: AppState.camera-running ? "■ Durdur" : "▶ Başlat";
-                    color: white;
+                    text: "\{AppState.camera-fps} FPS";
+                    color: AppState.camera-fps >= 20 ? Theme.accent-green : Theme.accent;
                     font-size: Theme.font-sm;
                     horizontal-alignment: center;
                     vertical-alignment: center;
                 }
-                TouchArea {
-                    clicked => {
-                        if (AppState.camera-running) {
-                            root.stop-camera();
-                        } else {
-                            root.start-camera(AppState.camera-index);
+            }
+
+            // Tespit sayısı (detection açıkken)
+            if (AppState.detection-enabled): Rectangle {
+                width: 72px;
+                background: #00000088;
+                border-radius: 4px;
+                Text {
+                    text: "\{AppState.detection-count} nesne";
+                    color: Theme.accent-yellow;
+                    font-size: Theme.font-sm;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+        }
+
+        // ── Kontrol çubuğu (sol alt) ─────────────────────
+        Rectangle {
+            y: parent.height - self.height - 8px;
+            x: 8px;
+            width: 380px;
+            height: 32px;
+            background: transparent;
+
+            HorizontalLayout {
+                spacing: Theme.pad-xs;
+
+                // Kamera seçici — sadece kamera duruyorken
+                if (!AppState.camera-running): ComboBox {
+                    horizontal-stretch: 1;
+                    model: AppState.available-cameras;
+                    current-index: AppState.camera-index;
+                    selected(val) => {
+                        AppState.camera-index = self.current-index;
+                    }
+                }
+
+                // Yenile butonu
+                if (!AppState.camera-running): Rectangle {
+                    width: 28px;
+                    background: Theme.bg-panel;
+                    border-radius: Theme.radius;
+                    Text {
+                        text: "↻";
+                        color: Theme.text-primary;
+                        font-size: Theme.font-md;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    TouchArea { clicked => { root.refresh-cameras(); } }
+                }
+
+                // Detection toggle (kamera çalışırken göster)
+                if (AppState.camera-running): Rectangle {
+                    width: 80px;
+                    background: AppState.detection-enabled ? Theme.accent-yellow : Theme.bg-panel;
+                    border-radius: Theme.radius;
+                    animate background { duration: 150ms; }
+                    Text {
+                        text: AppState.detection-enabled ? "🔍 Kapat" : "🔍 Algıla";
+                        color: AppState.detection-enabled ? #000000 : Theme.text-primary;
+                        font-size: Theme.font-sm;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    TouchArea {
+                        clicked => {
+                            AppState.detection-enabled = !AppState.detection-enabled;
+                            root.set-detection-enabled(AppState.detection-enabled);
+                        }
+                    }
+                }
+
+                // Başlat / Durdur
+                Rectangle {
+                    width: 80px;
+                    background: AppState.camera-running ? Theme.accent : Theme.accent-green;
+                    border-radius: Theme.radius;
+                    animate background { duration: 150ms; }
+                    Text {
+                        text: AppState.camera-running ? "■ Durdur" : "▶ Başlat";
+                        color: white;
+                        font-size: Theme.font-sm;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    TouchArea {
+                        clicked => {
+                            if (AppState.camera-running) {
+                                AppState.detection-enabled = false;
+                                root.stop-camera();
+                            } else {
+                                AppState.camera-error = "";
+                                root.start-camera(AppState.camera-index);
+                            }
                         }
                     }
                 }
             }
         }
 
-        // Bağlantı durumu overlay (bağlı değilken uyarı)
+        // ── Bağlantı durumu overlay (bağlı değilken uyarı) ──
         if (!AppState.connected): Rectangle {
             x: 8px; y: 8px;
             height: 24px;
             width: warning-text.preferred-width + 16px;
             background: #cc000088;
             border-radius: 4px;
-
             warning-text := Text {
                 text: "Robot bağlı değil";
                 color: white;

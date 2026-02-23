@@ -30,11 +30,26 @@ pub fn spawn(
 
                     loop {
                         // TX: bekleyen paketleri gönder
-                        while let Ok(pkt) = pkt_rx.try_recv() {
-                            if let Err(e) = port.write_all(&pkt) {
-                                let _ = event_tx.send(RobotEvent::Error(format!("Yazma hatası: {e}")));
-                                return;
+                        // pkt_rx kapatılınca (Sender drop) Disconnected → thread çıkar
+                        let mut sender_closed = false;
+                        loop {
+                            match pkt_rx.try_recv() {
+                                Ok(pkt) => {
+                                    if let Err(e) = port.write_all(&pkt) {
+                                        let _ = event_tx.send(RobotEvent::Error(format!("Yazma hatası: {e}")));
+                                        return;
+                                    }
+                                }
+                                Err(mpsc::TryRecvError::Empty) => break,
+                                Err(mpsc::TryRecvError::Disconnected) => {
+                                    sender_closed = true;
+                                    break;
+                                }
                             }
+                        }
+                        if sender_closed {
+                            // Bağlantı kesildi — port drop edilir, seri port serbest kalır
+                            return;
                         }
 
                         // RX: gelen veriyi oku
