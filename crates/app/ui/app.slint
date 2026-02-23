@@ -6,7 +6,7 @@ import { JoystickPanel }   from "components/joystick_panel.slint";
 import { SpeedDisplay }    from "components/speed_display.slint";
 import { CameraView }      from "components/camera_view.slint";
 import { MapView }         from "components/map_view.slint";
-import { TabWidget, ScrollView } from "std-widgets.slint";
+import { TabWidget, Palette } from "std-widgets.slint";
 
 export { AppState }
 
@@ -36,6 +36,9 @@ export component AppWindow inherits Window {
     callback stop-camera();
     callback enable-gps();
     callback disable-gps();
+
+    // Dark tema zorla — tüm native widgetları (Button, ComboBox, SpinBox vb.) etkiler
+    init => { Palette.color-scheme = ColorScheme.dark; }
 
     // Yardım dialog görünürlüğü
     property <bool> help-visible: false;
@@ -188,41 +191,34 @@ export component AppWindow inherits Window {
                     background: Theme.bg-panel;
                     border-color: Theme.border;
 
-                    ScrollView {
-                        width: parent.width;
-                        height: parent.height;
-                        viewport-width: parent.width;
+                    VerticalLayout {
+                        padding:  Theme.pad-sm;
+                        spacing:  Theme.pad-sm;
 
-                        VerticalLayout {
-                            padding:  Theme.pad-sm;
-                            spacing:  Theme.pad-sm;
-                            width: parent.width;
+                        ConnectionPanel {
+                            connect-serial(p, b) => { root.connect-serial(p, b); }
+                            connect-tcp(h, p)    => { root.connect-tcp(h, p); }
+                            disconnect()         => { root.disconnect(); }
+                            refresh-ports()      => { root.refresh-ports(); }
+                        }
 
-                            ConnectionPanel {
-                                connect-serial(p, b) => { root.connect-serial(p, b); }
-                                connect-tcp(h, p)    => { root.connect-tcp(h, p); }
-                                disconnect()         => { root.disconnect(); }
-                                refresh-ports()      => { root.refresh-ports(); }
-                            }
+                        MotorControl {
+                            start()          => { root.send-start(); }
+                            stop()           => { root.send-stop(); }
+                            set-gear(g)      => { root.set-gear(g); }
+                            set-light(v)     => { root.send-light(v); }
+                            set-brake(v)     => { root.send-brake(v); }
+                            set-reverse-l(v) => { root.set-reverse-left(v); }
+                            set-reverse-r(v) => { root.set-reverse-right(v); }
+                        }
 
-                            MotorControl {
-                                start()          => { root.send-start(); }
-                                stop()           => { root.send-stop(); }
-                                set-gear(g)      => { root.set-gear(g); }
-                                set-light(v)     => { root.send-light(v); }
-                                set-brake(v)     => { root.send-brake(v); }
-                                set-reverse-l(v) => { root.set-reverse-left(v); }
-                                set-reverse-r(v) => { root.set-reverse-right(v); }
-                            }
+                        JoystickPanel {
+                            moved(dx, dy, r) => { root.joystick-moved(dx, dy, r); }
+                            released()       => { root.joystick-released(); }
+                        }
 
-                            JoystickPanel {
-                                moved(dx, dy, r) => { root.joystick-moved(dx, dy, r); }
-                                released()       => { root.joystick-released(); }
-                            }
-
-                            SpeedDisplay {
-                                vertical-stretch: 1;
-                            }
+                        SpeedDisplay {
+                            vertical-stretch: 1;
                         }
                     }
                 }
