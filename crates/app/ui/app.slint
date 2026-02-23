@@ -77,10 +77,12 @@ export component AppWindow inherits Window {
             spacing: 0px;
 
             // ────────── Üst başlık çubuğu ───────────────
-            Rectangle {
+            header-bar := Rectangle {
                 height: 44px;
                 background: Theme.bg-card;
                 border-color: Theme.border;
+                // Yardım popup görünürlüğü
+                property <bool> help-visible: false;
 
                 HorizontalLayout {
                     padding-left:  Theme.pad-md;
@@ -98,12 +100,89 @@ export component AppWindow inherits Window {
 
                     Rectangle { horizontal-stretch: 1; }
 
-                    // Klavye kısayolları ipucu
-                    Text {
-                        text: "WASD · Space=DUR · L=Işık · B=Fren · 1/2/3=Vites · C/M=Sekme";
-                        color: Theme.text-disabled;
-                        font-size: Theme.font-sm;
-                        vertical-alignment: center;
+                    // Yardım butonu
+                    help-btn := Rectangle {
+                        width: 28px; height: 28px;
+                        border-radius: 14px;
+                        background: header-bar.help-visible ? Theme.bg-card-hover : Theme.bg-panel;
+                        border-color: Theme.border;
+                        border-width: 1px;
+                        animate background { duration: 100ms; }
+
+                        Text {
+                            text: "?";
+                            color: Theme.text-dim;
+                            font-size: Theme.font-md;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                        TouchArea {
+                            clicked => { header-bar.help-visible = !header-bar.help-visible; }
+                        }
+                    }
+                }
+
+                // Yardım popup'ı — HorizontalLayout dışında, absolute konumlu
+                if (header-bar.help-visible): Rectangle {
+                    x: header-bar.width - 320px;
+                    y: header-bar.height + 4px;
+                    width: 310px;
+                    background: Theme.bg-card;
+                    border-color: Theme.border;
+                    border-width: 1px;
+                    border-radius: Theme.radius;
+                    drop-shadow-blur: 12px;
+                    drop-shadow-color: #00000088;
+
+                    VerticalLayout {
+                        padding: Theme.pad-md;
+                        spacing: Theme.pad-xs;
+
+                        Text {
+                            text: "Klavye Kısayolları";
+                            color: Theme.text-primary;
+                            font-size: Theme.font-md;
+                        }
+
+                        Rectangle { height: 1px; background: Theme.border; }
+
+                        for row in [
+                            ["W / ↑",       "İleri"],
+                            ["S / ↓",       "Geri"],
+                            ["A / ←",       "Sol dönüş"],
+                            ["D / →",       "Sağ dönüş"],
+                            ["Space",       "Acil durdurma"],
+                            ["1 / 2 / 3",   "Vites seç"],
+                            ["L",           "Işık aç/kapat"],
+                            ["B",           "Fren aç/kapat"],
+                            ["C",           "Kamera sekmesi"],
+                            ["M",           "Harita sekmesi"],
+                        ]: HorizontalLayout {
+                            spacing: Theme.pad-sm;
+                            Rectangle {
+                                width: 90px;
+                                background: Theme.bg-panel;
+                                border-radius: 3px;
+                                height: 20px;
+                                Text {
+                                    text: row[0];
+                                    color: Theme.accent-yellow;
+                                    font-size: Theme.font-sm;
+                                    horizontal-alignment: center;
+                                    vertical-alignment: center;
+                                }
+                            }
+                            Text {
+                                text: row[1];
+                                color: Theme.text-dim;
+                                font-size: Theme.font-sm;
+                                vertical-alignment: center;
+                            }
+                        }
+                    }
+                    // Popup'ı tıklayınca kapat
+                    TouchArea {
+                        clicked => { header-bar.help-visible = false; }
                     }
                 }
             }

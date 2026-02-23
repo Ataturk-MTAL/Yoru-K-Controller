@@ -7,9 +7,15 @@ export component ConnectionPanel {
     callback disconnect();
     callback refresh-ports();
 
+    // Port dropdown açık mı?
+    property <bool> port-dropdown-open: false;
+    // TCP host düzenleme
+    property <string> tcp-host-edit: AppState.tcp-host;
+
     Rectangle {
         background: Theme.bg-card;
         border-radius: Theme.radius;
+        clip: false;
 
         VerticalLayout {
             padding: Theme.pad-sm;
@@ -40,7 +46,10 @@ export component ConnectionPanel {
                         vertical-alignment: center;
                     }
                     TouchArea {
-                        clicked => { AppState.is-serial = true; }
+                        clicked => {
+                            AppState.is-serial = true;
+                            port-dropdown-open = false;
+                        }
                     }
 
                     states [
@@ -68,7 +77,10 @@ export component ConnectionPanel {
                         vertical-alignment: center;
                     }
                     TouchArea {
-                        clicked => { AppState.is-serial = false; }
+                        clicked => {
+                            AppState.is-serial = false;
+                            port-dropdown-open = false;
+                        }
                     }
 
                     states [
@@ -84,7 +96,7 @@ export component ConnectionPanel {
                 }
             }
 
-            // Serial ayarları
+            // ── Serial ayarları ────────────────────────────
             if (AppState.is-serial): VerticalLayout {
                 spacing: Theme.pad-xs;
 
@@ -97,50 +109,124 @@ export component ConnectionPanel {
                         color: Theme.text-dim;
                         font-size: Theme.font-sm;
                         vertical-alignment: center;
-                        width: 38px;
+                        width: 34px;
                     }
 
-                    port-input := Rectangle {
+                    // Port seçici — tıklayınca dropdown açılır
+                    port-selector := Rectangle {
                         background: Theme.bg-panel;
-                        border-color: Theme.border;
+                        border-color: port-dropdown-open ? Theme.border-active : Theme.border;
                         border-width: 1px;
                         border-radius: Theme.radius;
                         height: 26px;
                         horizontal-stretch: 1;
+                        animate border-color { duration: 100ms; }
 
-                        Text {
-                            text: AppState.serial-port == "" ? "/dev/tty... veya COM" : AppState.serial-port;
-                            color: AppState.serial-port == "" ? Theme.text-disabled : Theme.text-primary;
-                            font-size: Theme.font-sm;
-                            vertical-alignment: center;
-                            x: Theme.pad-xs;
+                        HorizontalLayout {
+                            padding-left: Theme.pad-xs;
+                            padding-right: 4px;
+                            alignment: center;
+
+                            Text {
+                                text: AppState.serial-port == ""
+                                    ? "Port seçin..." : AppState.serial-port;
+                                color: AppState.serial-port == ""
+                                    ? Theme.text-disabled : Theme.text-primary;
+                                font-size: Theme.font-sm;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                                overflow: elide;
+                            }
+                            Text {
+                                text: port-dropdown-open ? "▲" : "▼";
+                                color: Theme.text-dim;
+                                font-size: 9px;
+                                vertical-alignment: center;
+                            }
+                        }
+                        TouchArea {
+                            clicked => {
+                                port-dropdown-open = !port-dropdown-open;
+                                if (port-dropdown-open) { root.refresh-ports(); }
+                            }
                         }
                     }
 
+                    // Yenile butonu
                     refresh-btn := Rectangle {
                         background: Theme.bg-panel;
                         border-color: Theme.border;
                         border-width: 1px;
                         border-radius: Theme.radius;
-                        width: 28px; height: 26px;
+                        width: 26px; height: 26px;
 
                         Text {
                             text: "↻";
                             color: Theme.text-primary;
+                            font-size: Theme.font-md;
                             horizontal-alignment: center;
                             vertical-alignment: center;
                         }
                         TouchArea {
-                            clicked => { root.refresh-ports(); }
+                            clicked => {
+                                root.refresh-ports();
+                                port-dropdown-open = true;
+                            }
+                        }
+                    }
+                }
+
+                // Port dropdown listesi
+                if (port-dropdown-open): Rectangle {
+                    background: Theme.bg-panel;
+                    border-color: Theme.border-active;
+                    border-width: 1px;
+                    border-radius: Theme.radius;
+                    // Dinamik yükseklik: max 5 port × 28px
+                    height: AppState.available-ports.length == 0 ? 32px
+                        : min(AppState.available-ports.length * 28px, 140px);
+
+                    // Port yok mesajı
+                    if (AppState.available-ports.length == 0): Text {
+                        text: "Port bulunamadı";
+                        color: Theme.text-disabled;
+                        font-size: Theme.font-sm;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+
+                    // Port listesi
+                    if (AppState.available-ports.length > 0): VerticalLayout {
+                        for port in AppState.available-ports: port-item := Rectangle {
+                            height: 28px;
+                            background: AppState.serial-port == port
+                                ? Theme.bg-card-hover : transparent;
+                            animate background { duration: 80ms; }
+
+                            Text {
+                                text: port;
+                                color: AppState.serial-port == port
+                                    ? Theme.text-primary : Theme.text-dim;
+                                font-size: Theme.font-sm;
+                                vertical-alignment: center;
+                                x: Theme.pad-sm;
+                            }
+                            TouchArea {
+                                clicked => {
+                                    AppState.serial-port = port;
+                                    port-dropdown-open = false;
+                                }
+                            }
                         }
                     }
                 }
             }
 
-            // TCP ayarları
+            // ── TCP ayarları ───────────────────────────────
             if (!AppState.is-serial): VerticalLayout {
                 spacing: Theme.pad-xs;
 
+                // Host satırı
                 HorizontalLayout {
                     spacing: Theme.pad-xs;
                     alignment: center;
@@ -150,36 +236,74 @@ export component ConnectionPanel {
                         color: Theme.text-dim;
                         font-size: Theme.font-sm;
                         vertical-alignment: center;
-                        width: 38px;
+                        width: 34px;
                     }
 
-                    Rectangle {
+                    // Düzenlenebilir host input
+                    host-rect := Rectangle {
                         background: Theme.bg-panel;
-                        border-color: Theme.border;
+                        border-color: host-input.has-focus ? Theme.border-active : Theme.border;
                         border-width: 1px;
                         border-radius: Theme.radius;
                         height: 26px;
                         horizontal-stretch: 1;
+                        animate border-color { duration: 100ms; }
 
-                        Text {
+                        host-input := TextInput {
                             text: AppState.tcp-host;
                             color: Theme.text-primary;
                             font-size: Theme.font-sm;
                             vertical-alignment: center;
                             x: Theme.pad-xs;
+                            width: parent.width - Theme.pad-xs * 2;
+                            single-line: true;
+                            edited => { AppState.tcp-host = self.text; }
                         }
                     }
+                }
+
+                // Port satırı
+                HorizontalLayout {
+                    spacing: Theme.pad-xs;
+                    alignment: center;
 
                     Text {
-                        text: ":\{AppState.tcp-port}";
+                        text: "Port:";
                         color: Theme.text-dim;
                         font-size: Theme.font-sm;
                         vertical-alignment: center;
+                        width: 34px;
+                    }
+
+                    port-rect := Rectangle {
+                        background: Theme.bg-panel;
+                        border-color: port-input.has-focus ? Theme.border-active : Theme.border;
+                        border-width: 1px;
+                        border-radius: Theme.radius;
+                        height: 26px;
+                        horizontal-stretch: 1;
+                        animate border-color { duration: 100ms; }
+
+                        port-input := TextInput {
+                            text: AppState.tcp-port;
+                            color: Theme.text-primary;
+                            font-size: Theme.font-sm;
+                            vertical-alignment: center;
+                            x: Theme.pad-xs;
+                            width: parent.width - Theme.pad-xs * 2;
+                            single-line: true;
+                            input-type: number;
+                            edited => {
+                                if (self.text.to-float() > 0) {
+                                    AppState.tcp-port = round(self.text.to-float());
+                                }
+                            }
+                        }
                     }
                 }
             }
 
-            // Bağlan / Kes butonu
+            // ── Bağlan / Kes butonu ────────────────────────
             connect-rect := Rectangle {
                 border-radius: Theme.radius;
                 height: 32px;
@@ -203,7 +327,7 @@ export component ConnectionPanel {
                     }
                 ]
 
-                touch := TouchArea {
+                TouchArea {
                     clicked => {
                         if (AppState.connected) {
                             root.disconnect();
