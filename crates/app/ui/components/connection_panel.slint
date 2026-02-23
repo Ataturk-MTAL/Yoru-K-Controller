@@ -1,6 +1,6 @@
-import { AppState }  from "../state.slint";
-import { Theme }     from "../theme.slint";
-import { ComboBox, LineEdit } from "std-widgets.slint";
+import { AppState }              from "../state.slint";
+import { Theme }                 from "../theme.slint";
+import { ComboBox, LineEdit, Button } from "std-widgets.slint";
 
 export component ConnectionPanel {
     callback connect-serial(string, int);
@@ -8,9 +8,9 @@ export component ConnectionPanel {
     callback disconnect();
     callback refresh-ports();
 
-    // TCP: local string properties for TextInput binding
+    // TCP local string properties — int→string dönüşümü manuel
     property <string> tcp-host-text: AppState.tcp-host;
-    property <string> tcp-port-text: AppState.tcp-port;
+    property <string> tcp-port-text: "80";  // varsayılan, int'ten dönüşüm yok
 
     Rectangle {
         background: Theme.bg-card;
@@ -71,10 +71,9 @@ export component ConnectionPanel {
                 }
             }
 
-            // ── Serial ayarları ────────────────────────────
+            // ── Serial: Port seçici ────────────────────────
             if (AppState.is-serial): HorizontalLayout {
                 spacing: Theme.pad-xs;
-                alignment: center;
 
                 Text {
                     text: "Port:";
@@ -88,39 +87,22 @@ export component ConnectionPanel {
                     horizontal-stretch: 1;
                     model: AppState.available-ports;
                     current-value: AppState.serial-port;
-                    selected(val) => {
-                        AppState.serial-port = val;
-                    }
+                    selected(val) => { AppState.serial-port = val; }
                 }
 
-                // Yenile butonu
-                Rectangle {
-                    background: Theme.bg-panel;
-                    border-color: Theme.border;
-                    border-width: 1px;
-                    border-radius: Theme.radius;
-                    width: 26px; height: 26px;
-
-                    Text {
-                        text: "↻";
-                        color: Theme.text-primary;
-                        font-size: Theme.font-md;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
-                    TouchArea {
-                        clicked => { root.refresh-ports(); }
-                    }
+                Button {
+                    text: "↻";
+                    width: 30px;
+                    clicked => { root.refresh-ports(); }
                 }
             }
 
-            // ── TCP ayarları ───────────────────────────────
+            // ── TCP: Host ve Port ──────────────────────────
             if (!AppState.is-serial): VerticalLayout {
                 spacing: Theme.pad-xs;
 
                 HorizontalLayout {
                     spacing: Theme.pad-xs;
-                    alignment: center;
 
                     Text {
                         text: "Host:";
@@ -134,13 +116,11 @@ export component ConnectionPanel {
                         horizontal-stretch: 1;
                         text <=> tcp-host-text;
                         placeholder-text: "192.168.4.1";
-                        edited(val) => { AppState.tcp-host = val; }
                     }
                 }
 
                 HorizontalLayout {
                     spacing: Theme.pad-xs;
-                    alignment: center;
 
                     Text {
                         text: "Port:";
@@ -159,33 +139,20 @@ export component ConnectionPanel {
                 }
             }
 
-            // ── Bağlan / Kes butonu ────────────────────────
-            Rectangle {
-                border-radius: Theme.radius;
-                height: 32px;
-                background: AppState.connected ? Theme.accent : Theme.accent-green;
-                animate background { duration: 300ms; }
-
-                Text {
-                    text: AppState.connected ? "BAĞLANTIYI KES" : "BAĞLAN";
-                    color: white;
-                    font-size: Theme.font-md;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
-                }
-
-                TouchArea {
-                    clicked => {
-                        if (AppState.connected) {
-                            root.disconnect();
-                        } else if (AppState.is-serial) {
-                            root.connect-serial(AppState.serial-port, AppState.baud-rate);
-                        } else {
-                            root.connect-tcp(
-                                tcp-host-text,
-                                round(tcp-port-text.to-float())
-                            );
-                        }
+            // ── Bağlan / Kes ───────────────────────────────
+            Button {
+                text: AppState.connected ? "BAĞLANTIYI KES" : "BAĞLAN";
+                primary: !AppState.connected;
+                clicked => {
+                    if (AppState.connected) {
+                        root.disconnect();
+                    } else if (AppState.is-serial) {
+                        root.connect-serial(AppState.serial-port, AppState.baud-rate);
+                    } else {
+                        root.connect-tcp(
+                            tcp-host-text,
+                            round(tcp-port-text.to-float())
+                        );
                     }
                 }
             }
