@@ -1,6 +1,6 @@
-import { AppState }              from "../state.slint";
-import { Theme }                 from "../theme.slint";
-import { ComboBox, LineEdit, Button } from "std-widgets.slint";
+import { AppState }                            from "../state.slint";
+import { Theme }                               from "../theme.slint";
+import { ComboBox, LineEdit, Button, SpinBox } from "std-widgets.slint";
 
 export component ConnectionPanel {
     callback connect-serial(string, int);
@@ -8,71 +8,109 @@ export component ConnectionPanel {
     callback disconnect();
     callback refresh-ports();
 
-    // TCP local string properties — int→string dönüşümü manuel
-    property <string> tcp-host-text: AppState.tcp-host;
-    property <string> tcp-port-text: "80";  // varsayılan, int'ten dönüşüm yok
+    VerticalLayout {
+        spacing: Theme.pad-xs;
 
-    Rectangle {
-        background: Theme.bg-card;
-        border-radius: Theme.radius;
+        // Başlık
+        Text {
+            text: "BAĞLANTI";
+            color: Theme.text-dim;
+            font-size: Theme.font-sm;
+            letter-spacing: 1.5px;
+        }
 
-        VerticalLayout {
-            padding: Theme.pad-sm;
+        // ── Mod seçici ────────────────────────────────
+        HorizontalLayout {
             spacing: Theme.pad-xs;
 
-            // Başlık
-            Text {
-                text: "BAĞLANTI";
-                color: Theme.text-dim;
-                font-size: Theme.font-sm;
-                letter-spacing: 1.5px;
+            Rectangle {
+                border-radius: Theme.radius;
+                height: 28px;
+                horizontal-stretch: 1;
+                background: AppState.is-serial ? Theme.accent : Theme.bg-panel;
+                animate background { duration: 150ms; }
+
+                Text {
+                    text: "Serial";
+                    color: Theme.text-primary;
+                    font-size: Theme.font-md;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                TouchArea {
+                    clicked => { AppState.is-serial = true; }
+                }
             }
 
-            // ── Mod seçici ────────────────────────────────
+            Rectangle {
+                border-radius: Theme.radius;
+                height: 28px;
+                horizontal-stretch: 1;
+                background: !AppState.is-serial ? Theme.accent : Theme.bg-panel;
+                animate background { duration: 150ms; }
+
+                Text {
+                    text: "TCP/IP";
+                    color: Theme.text-primary;
+                    font-size: Theme.font-md;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+                TouchArea {
+                    clicked => { AppState.is-serial = false; }
+                }
+            }
+        }
+
+        // ── Serial: Port seçici ────────────────────────
+        if (AppState.is-serial): HorizontalLayout {
+            spacing: Theme.pad-xs;
+
+            Text {
+                text: "Port:";
+                color: Theme.text-dim;
+                font-size: Theme.font-sm;
+                vertical-alignment: center;
+                width: 34px;
+            }
+
+            ComboBox {
+                horizontal-stretch: 1;
+                model: AppState.available-ports;
+                current-value: AppState.serial-port;
+                selected(val) => { AppState.serial-port = val; }
+            }
+
+            Button {
+                text: "↻";
+                width: 30px;
+                clicked => { root.refresh-ports(); }
+            }
+        }
+
+        // ── TCP: Host ve Port ──────────────────────────
+        if (!AppState.is-serial): VerticalLayout {
+            spacing: Theme.pad-xs;
+
             HorizontalLayout {
                 spacing: Theme.pad-xs;
 
-                Rectangle {
-                    border-radius: Theme.radius;
-                    height: 28px;
-                    horizontal-stretch: 1;
-                    background: AppState.is-serial ? Theme.accent : Theme.bg-panel;
-                    animate background { duration: 150ms; }
-
-                    Text {
-                        text: "Serial";
-                        color: Theme.text-primary;
-                        font-size: Theme.font-md;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
-                    TouchArea {
-                        clicked => { AppState.is-serial = true; }
-                    }
+                Text {
+                    text: "Host:";
+                    color: Theme.text-dim;
+                    font-size: Theme.font-sm;
+                    vertical-alignment: center;
+                    width: 34px;
                 }
 
-                Rectangle {
-                    border-radius: Theme.radius;
-                    height: 28px;
+                LineEdit {
                     horizontal-stretch: 1;
-                    background: !AppState.is-serial ? Theme.accent : Theme.bg-panel;
-                    animate background { duration: 150ms; }
-
-                    Text {
-                        text: "TCP/IP";
-                        color: Theme.text-primary;
-                        font-size: Theme.font-md;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
-                    }
-                    TouchArea {
-                        clicked => { AppState.is-serial = false; }
-                    }
+                    text <=> AppState.tcp-host;
+                    placeholder-text: "192.168.4.1";
                 }
             }
 
-            // ── Serial: Port seçici ────────────────────────
-            if (AppState.is-serial): HorizontalLayout {
+            HorizontalLayout {
                 spacing: Theme.pad-xs;
 
                 Text {
@@ -83,100 +121,50 @@ export component ConnectionPanel {
                     width: 34px;
                 }
 
-                ComboBox {
+                // SpinBox: int↔int direkt binding — string parse sorunu yok
+                SpinBox {
                     horizontal-stretch: 1;
-                    model: AppState.available-ports;
-                    current-value: AppState.serial-port;
-                    selected(val) => { AppState.serial-port = val; }
-                }
-
-                Button {
-                    text: "↻";
-                    width: 30px;
-                    clicked => { root.refresh-ports(); }
+                    minimum: 1;
+                    maximum: 65535;
+                    value <=> AppState.tcp-port;
                 }
             }
+        }
 
-            // ── TCP: Host ve Port ──────────────────────────
-            if (!AppState.is-serial): VerticalLayout {
-                spacing: Theme.pad-xs;
-
-                HorizontalLayout {
-                    spacing: Theme.pad-xs;
-
-                    Text {
-                        text: "Host:";
-                        color: Theme.text-dim;
-                        font-size: Theme.font-sm;
-                        vertical-alignment: center;
-                        width: 34px;
-                    }
-
-                    LineEdit {
-                        horizontal-stretch: 1;
-                        text <=> tcp-host-text;
-                        placeholder-text: "192.168.4.1";
-                    }
-                }
-
-                HorizontalLayout {
-                    spacing: Theme.pad-xs;
-
-                    Text {
-                        text: "Port:";
-                        color: Theme.text-dim;
-                        font-size: Theme.font-sm;
-                        vertical-alignment: center;
-                        width: 34px;
-                    }
-
-                    LineEdit {
-                        horizontal-stretch: 1;
-                        text <=> tcp-port-text;
-                        placeholder-text: "80";
-                        input-type: number;
-                    }
+        // ── Bağlan / Kes ───────────────────────────────
+        Button {
+            text: AppState.connected ? "BAĞLANTIYI KES" : "BAĞLAN";
+            primary: !AppState.connected;
+            clicked => {
+                if (AppState.connected) {
+                    root.disconnect();
+                } else if (AppState.is-serial) {
+                    root.connect-serial(AppState.serial-port, AppState.baud-rate);
+                } else {
+                    root.connect-tcp(AppState.tcp-host, AppState.tcp-port);
                 }
             }
+        }
 
-            // ── Bağlan / Kes ───────────────────────────────
-            Button {
-                text: AppState.connected ? "BAĞLANTIYI KES" : "BAĞLAN";
-                primary: !AppState.connected;
-                clicked => {
-                    if (AppState.connected) {
-                        root.disconnect();
-                    } else if (AppState.is-serial) {
-                        root.connect-serial(AppState.serial-port, AppState.baud-rate);
-                    } else {
-                        root.connect-tcp(
-                            tcp-host-text,
-                            round(tcp-port-text.to-float())
-                        );
-                    }
-                }
+        // ── Durum indikatörü ───────────────────────────
+        HorizontalLayout {
+            spacing: Theme.pad-xs;
+            alignment: center;
+
+            Rectangle {
+                width: 8px; height: 8px;
+                border-radius: 4px;
+                background: AppState.connected ? Theme.accent-green : Theme.text-disabled;
+                animate background { duration: 200ms; }
             }
 
-            // ── Durum indikatörü ───────────────────────────
-            HorizontalLayout {
-                spacing: Theme.pad-xs;
-                alignment: center;
-
-                Rectangle {
-                    width: 8px; height: 8px;
-                    border-radius: 4px;
-                    background: AppState.connected ? Theme.accent-green : Theme.text-disabled;
-                    animate background { duration: 200ms; }
-                }
-
-                Text {
-                    text: AppState.connected
-                        ? (AppState.is-serial ? "Seri Port" : "TCP/IP") + " — Bağlı"
-                        : "Bağlantı yok";
-                    color: AppState.connected ? Theme.accent-green : Theme.text-disabled;
-                    font-size: Theme.font-sm;
-                    vertical-alignment: center;
-                }
+            Text {
+                text: AppState.connected
+                    ? (AppState.is-serial ? "Seri Port" : "TCP/IP") + " — Bağlı"
+                    : "Bağlantı yok";
+                color: AppState.connected ? Theme.accent-green : Theme.text-disabled;
+                font-size: Theme.font-sm;
+                vertical-alignment: center;
             }
         }
     }

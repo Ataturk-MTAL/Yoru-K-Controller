@@ -6,6 +6,7 @@ import { JoystickPanel }   from "components/joystick_panel.slint";
 import { SpeedDisplay }    from "components/speed_display.slint";
 import { CameraView }      from "components/camera_view.slint";
 import { MapView }         from "components/map_view.slint";
+import { TabWidget, ScrollView } from "std-widgets.slint";
 
 export { AppState }
 
@@ -18,8 +19,8 @@ export component AppWindow inherits Window {
     preferred-height: 800px;
 
     // ── Rust'a callback'ler ──────────────────────────────
-    callback connect-serial(string, int);    // port, baud
-    callback connect-tcp(string, int);       // host, port
+    callback connect-serial(string, int);
+    callback connect-tcp(string, int);
     callback disconnect();
     callback refresh-ports();
     callback send-start();
@@ -29,35 +30,54 @@ export component AppWindow inherits Window {
     callback set-gear(int);
     callback set-reverse-left(bool);
     callback set-reverse-right(bool);
-    callback joystick-moved(float, float, float);  // dx, dy, max_radius
+    callback joystick-moved(float, float, float);
     callback joystick-released();
     callback start-camera(int);
     callback stop-camera();
     callback enable-gps();
     callback disable-gps();
 
+    // Yardım dialog görünürlüğü
+    property <bool> help-visible: false;
+
+    // ── MenuBar ──────────────────────────────────────────
+    MenuBar {
+        Menu {
+            title: "Bağlantı";
+            MenuItem {
+                title: "Bağlantıyı Kes";
+                activated => { root.disconnect(); }
+            }
+        }
+        Menu {
+            title: "Motor";
+            MenuItem { title: "Başlat"; activated => { root.send-start(); } }
+            MenuItem { title: "Durdur"; activated => { root.send-stop(); } }
+            MenuItem { title: "Işık";   activated => { root.send-light(!AppState.light-on); } }
+            MenuItem { title: "Fren";   activated => { root.send-brake(!AppState.brake-on); } }
+        }
+        Menu {
+            title: "Yardım";
+            MenuItem {
+                title: "Klavye Kısayolları";
+                activated => { root.help-visible = !root.help-visible; }
+            }
+        }
+    }
+
     // ── Klavye focus ─────────────────────────────────────
     forward-focus: key-handler;
 
     key-handler := FocusScope {
-        // ── Klavye basıldığında ──────────────────────────
         key-pressed(e) => {
-            // Acil durdurma — Space
-            if (e.text == " ") {
-                root.send-stop();
-                return accept;
-            }
-            // Vites seçimi
+            if (e.text == " ") { root.send-stop(); return accept; }
             if (e.text == "1") { root.set-gear(1); return accept; }
             if (e.text == "2") { root.set-gear(2); return accept; }
             if (e.text == "3") { root.set-gear(3); return accept; }
-            // Periferal
             if (e.text == "l") { root.send-light(!AppState.light-on); return accept; }
             if (e.text == "b") { root.send-brake(!AppState.brake-on); return accept; }
-            // Tab geçişi — M = Harita / C = Kamera
             if (e.text == "m") { AppState.active-tab = 1; return accept; }
             if (e.text == "c") { AppState.active-tab = 0; return accept; }
-            // WASD / Ok tuşları — Rust tarafında işlenir
             if (e.text == "w" || e.text == Key.UpArrow)    { return accept; }
             if (e.text == "s" || e.text == Key.DownArrow)  { return accept; }
             if (e.text == "a" || e.text == Key.LeftArrow)  { return accept; }
@@ -72,24 +92,21 @@ export component AppWindow inherits Window {
             reject
         }
 
-        // ── Layout ──────────────────────────────────────
+        // ── Ana layout ───────────────────────────────────
         VerticalLayout {
             spacing: 0px;
 
             // ────────── Üst başlık çubuğu ───────────────
-            header-bar := Rectangle {
+            Rectangle {
                 height: 44px;
                 background: Theme.bg-card;
                 border-color: Theme.border;
-                // Yardım popup görünürlüğü
-                property <bool> help-visible: false;
 
                 HorizontalLayout {
                     padding-left:  Theme.pad-md;
                     padding-right: Theme.pad-md;
                     alignment: center;
 
-                    // Logo / isim
                     Text {
                         text: "🤖 YÖRÜ-K";
                         color: Theme.text-primary;
@@ -100,89 +117,40 @@ export component AppWindow inherits Window {
 
                     Rectangle { horizontal-stretch: 1; }
 
-                    // Yardım butonu
-                    help-btn := Rectangle {
-                        width: 28px; height: 28px;
-                        border-radius: 14px;
-                        background: header-bar.help-visible ? Theme.bg-card-hover : Theme.bg-panel;
-                        border-color: Theme.border;
-                        border-width: 1px;
-                        animate background { duration: 100ms; }
-
-                        Text {
-                            text: "?";
-                            color: Theme.text-dim;
-                            font-size: Theme.font-md;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                        }
-                        TouchArea {
-                            clicked => { header-bar.help-visible = !header-bar.help-visible; }
-                        }
+                    Rectangle {
+                        width: 8px; height: 8px;
+                        border-radius: 4px;
+                        background: AppState.connected ? Theme.accent-green : Theme.text-disabled;
+                        animate background { duration: 300ms; }
                     }
-                }
 
-                // Yardım popup'ı — HorizontalLayout dışında, absolute konumlu
-                if (header-bar.help-visible): Rectangle {
-                    x: header-bar.width - 320px;
-                    y: header-bar.height + 4px;
-                    width: 310px;
-                    background: Theme.bg-card;
-                    border-color: Theme.border;
-                    border-width: 1px;
-                    border-radius: Theme.radius;
-                    drop-shadow-blur: 12px;
-                    drop-shadow-color: #00000088;
+                    Rectangle { width: Theme.pad-xs; }
 
-                    VerticalLayout {
-                        padding: Theme.pad-md;
-                        spacing: Theme.pad-xs;
-
-                        Text {
-                            text: "Klavye Kısayolları";
-                            color: Theme.text-primary;
-                            font-size: Theme.font-md;
-                        }
-
-                        Rectangle { height: 1px; background: Theme.border; }
-
-                        for row in [
-                            ["W / ↑",       "İleri"],
-                            ["S / ↓",       "Geri"],
-                            ["A / ←",       "Sol dönüş"],
-                            ["D / →",       "Sağ dönüş"],
-                            ["Space",       "Acil durdurma"],
-                            ["1 / 2 / 3",   "Vites seç"],
-                            ["L",           "Işık aç/kapat"],
-                            ["B",           "Fren aç/kapat"],
-                            ["C",           "Kamera sekmesi"],
-                            ["M",           "Harita sekmesi"],
-                        ]: HorizontalLayout {
-                            spacing: Theme.pad-sm;
-                            Rectangle {
-                                width: 90px;
-                                background: Theme.bg-panel;
-                                border-radius: 3px;
-                                height: 20px;
-                                Text {
-                                    text: row[0];
-                                    color: Theme.accent-yellow;
-                                    font-size: Theme.font-sm;
-                                    horizontal-alignment: center;
-                                    vertical-alignment: center;
-                                }
-                            }
-                            Text {
-                                text: row[1];
-                                color: Theme.text-dim;
-                                font-size: Theme.font-sm;
-                                vertical-alignment: center;
-                            }
-                        }
+                    Text {
+                        text: AppState.status-text;
+                        color: Theme.text-dim;
+                        font-size: Theme.font-sm;
+                        vertical-alignment: center;
                     }
-                    // Popup'ı tıklayınca kapat
-                    TouchArea {
-                        clicked => { header-bar.help-visible = false; }
+
+                    Rectangle { width: Theme.pad-md; }
+
+                    if (AppState.motor-running): Text {
+                        text: "● Motor";
+                        color: Theme.accent-green;
+                        font-size: Theme.font-sm;
+                        vertical-alignment: center;
+                    }
+
+                    Rectangle { width: Theme.pad-md; }
+
+                    if (AppState.gps-active && AppState.gps-point-count > 0): Text {
+                        text: "🛰 " +
+                              round(AppState.gps-lat * 10000) / 10000 + "°  " +
+                              round(AppState.gps-lon * 10000) / 10000 + "°";
+                        color: Theme.accent-green;
+                        font-size: Theme.font-sm;
+                        vertical-alignment: center;
                     }
                 }
             }
@@ -192,236 +160,159 @@ export component AppWindow inherits Window {
                 vertical-stretch: 1;
                 spacing: 0px;
 
-                // ══ SOL PANEL: Kamera / Harita sekmeli ══════
-                VerticalLayout {
+                // ══ SOL PANEL: TabWidget ══════════════════
+                TabWidget {
                     horizontal-stretch: 1;
-                    spacing: 0px;
+                    current-index <=> AppState.active-tab;
 
-                    // ── Sekme başlıkları ─────────────────
-                    Rectangle {
-                        height: 36px;
-                        background: #0d1829;
-                        border-color: Theme.border;
-
-                        HorizontalLayout {
-                            spacing: 0px;
-                            padding-left: Theme.pad-sm;
-                            padding-right: Theme.pad-sm;
-                            alignment: start;
-
-                            // Tab 0: Kamera
-                            cam-tab := Rectangle {
-                                width: 120px;
-                                height: parent.height;
-                                background: AppState.active-tab == 0
-                                    ? Theme.bg-dark : #0d1829;
-                                animate background { duration: 150ms; }
-
-                                HorizontalLayout {
-                                    alignment: center;
-                                    spacing: Theme.pad-xs;
-                                    Text {
-                                        text: "Kamera";
-                                        color: AppState.active-tab == 0
-                                            ? Theme.text-primary : Theme.text-dim;
-                                        font-size: Theme.font-md;
-                                        vertical-alignment: center;
-                                        animate color { duration: 150ms; }
-                                    }
-                                }
-                                // Alt çizgi aktif göstergesi
-                                Rectangle {
-                                    y: parent.height - 2px;
-                                    height: 2px;
-                                    width: parent.width;
-                                    background: AppState.active-tab == 0
-                                        ? Theme.accent-green : transparent;
-                                    animate background { duration: 150ms; }
-                                }
-                                TouchArea {
-                                    clicked => { AppState.active-tab = 0; }
-                                }
-                            }
-
-                            // Tab 1: Harita
-                            map-tab := Rectangle {
-                                width: 120px;
-                                height: parent.height;
-                                background: AppState.active-tab == 1
-                                    ? Theme.bg-dark : #0d1829;
-                                animate background { duration: 150ms; }
-
-                                HorizontalLayout {
-                                    alignment: center;
-                                    spacing: Theme.pad-xs;
-                                    Text {
-                                        text: "Harita";
-                                        color: AppState.active-tab == 1
-                                            ? Theme.text-primary : Theme.text-dim;
-                                        font-size: Theme.font-md;
-                                        vertical-alignment: center;
-                                        animate color { duration: 150ms; }
-                                    }
-                                    // GPS aktifken küçük yeşil nokta
-                                    if (AppState.gps-active): Rectangle {
-                                        width: 7px; height: 7px;
-                                        border-radius: 4px;
-                                        background: Theme.accent-green;
-                                    }
-                                }
-                                Rectangle {
-                                    y: parent.height - 2px;
-                                    height: 2px;
-                                    width: parent.width;
-                                    background: AppState.active-tab == 1
-                                        ? Theme.accent-green : transparent;
-                                    animate background { duration: 150ms; }
-                                }
-                                TouchArea {
-                                    clicked => { AppState.active-tab = 1; }
-                                }
-                            }
-
-                            Rectangle { horizontal-stretch: 1; }
-
-                            // GPS nokta sayısı (harita sekmesinde)
-                            if (AppState.active-tab == 1 && AppState.gps-point-count > 0): Text {
-                                text: AppState.gps-point-count + " nokta";
-                                color: Theme.text-dim;
-                                font-size: Theme.font-sm;
-                                vertical-alignment: center;
-                            }
-                        }
-                    }
-
-                    // ── Sekme içeriği ────────────────────
-                    Rectangle {
-                        vertical-stretch: 1;
-                        clip: true;
-
-                        // Tab 0: Kamera görüntüsü
-                        if (AppState.active-tab == 0): CameraView {
-                            width: parent.width;
-                            height: parent.height;
+                    Tab {
+                        title: "Kamera";
+                        CameraView {
                             start-camera(i) => { root.start-camera(i); }
                             stop-camera()   => { root.stop-camera(); }
                         }
+                    }
 
-                        // Tab 1: Harita / GPS
-                        if (AppState.active-tab == 1): MapView {
-                            width: parent.width;
-                            height: parent.height;
+                    Tab {
+                        title: "Harita";
+                        MapView {
                             enable-gps()  => { root.enable-gps(); }
                             disable-gps() => { root.disable-gps(); }
                         }
                     }
                 }
 
-                // ══ SAĞ PANEL: Kontrol (asla gizlenmez) ════
+                // ══ SAĞ PANEL: Kontrol ════════════════════
                 Rectangle {
-                    width:      Theme.panel-width;
+                    width: Theme.panel-width;
                     background: Theme.bg-panel;
                     border-color: Theme.border;
 
-                    VerticalLayout {
-                        padding:  Theme.pad-sm;
-                        spacing:  Theme.pad-sm;
-                        vertical-stretch: 1;
+                    ScrollView {
+                        width: parent.width;
+                        height: parent.height;
+                        viewport-width: parent.width;
 
-                        // 1. Bağlantı
-                        ConnectionPanel {
-                            connect-serial(p, b) => { root.connect-serial(p, b); }
-                            connect-tcp(h, p)    => { root.connect-tcp(h, p); }
-                            disconnect()         => { root.disconnect(); }
-                            refresh-ports()      => { root.refresh-ports(); }
-                        }
+                        VerticalLayout {
+                            padding:  Theme.pad-sm;
+                            spacing:  Theme.pad-sm;
+                            width: parent.width;
 
-                        // 2. Motor kontrol
-                        MotorControl {
-                            start()          => { root.send-start(); }
-                            stop()           => { root.send-stop(); }
-                            set-gear(g)      => { root.set-gear(g); }
-                            set-light(v)     => { root.send-light(v); }
-                            set-brake(v)     => { root.send-brake(v); }
-                            set-reverse-l(v) => { root.set-reverse-left(v); }
-                            set-reverse-r(v) => { root.set-reverse-right(v); }
-                        }
+                            ConnectionPanel {
+                                connect-serial(p, b) => { root.connect-serial(p, b); }
+                                connect-tcp(h, p)    => { root.connect-tcp(h, p); }
+                                disconnect()         => { root.disconnect(); }
+                                refresh-ports()      => { root.refresh-ports(); }
+                            }
 
-                        // 3. Joystick
-                        JoystickPanel {
-                            moved(dx, dy, r) => { root.joystick-moved(dx, dy, r); }
-                            released()       => { root.joystick-released(); }
-                        }
+                            MotorControl {
+                                start()          => { root.send-start(); }
+                                stop()           => { root.send-stop(); }
+                                set-gear(g)      => { root.set-gear(g); }
+                                set-light(v)     => { root.send-light(v); }
+                                set-brake(v)     => { root.send-brake(v); }
+                                set-reverse-l(v) => { root.set-reverse-left(v); }
+                                set-reverse-r(v) => { root.set-reverse-right(v); }
+                            }
 
-                        // 4. Hız göstergesi (esnek yükseklik)
-                        SpeedDisplay {
-                            vertical-stretch: 1;
+                            JoystickPanel {
+                                moved(dx, dy, r) => { root.joystick-moved(dx, dy, r); }
+                                released()       => { root.joystick-released(); }
+                            }
+
+                            SpeedDisplay {
+                                vertical-stretch: 1;
+                            }
                         }
                     }
                 }
             }
+        }
+    }
 
-            // ────────── Alt durum çubuğu ─────────────────
-            Rectangle {
-                height: 26px;
-                background: Theme.bg-card;
-                border-color: Theme.border;
+    // ── Yardım dialog overlay ────────────────────────────
+    // FocusScope dışında, Window'un direkt child'ı — her zaman üstte
+    if (help-visible): Rectangle {
+        background: #00000066;
+        x: 0; y: 0;
+        width: root.width;
+        height: root.height;
+
+        Rectangle {
+            width: 340px;
+            x: (root.width - self.width) / 2;
+            y: (root.height - self.height) / 2;
+            background: Theme.bg-card;
+            border-color: Theme.border;
+            border-width: 1px;
+            border-radius: Theme.radius;
+            drop-shadow-blur: 20px;
+            drop-shadow-color: #000000aa;
+
+            VerticalLayout {
+                padding: Theme.pad-md;
+                spacing: Theme.pad-sm;
 
                 HorizontalLayout {
-                    padding-left:  Theme.pad-md;
-                    padding-right: Theme.pad-md;
-                    alignment: center;
-
-                    // Bağlantı indikatörü
+                    Text {
+                        text: "Klavye Kısayolları";
+                        color: Theme.text-primary;
+                        font-size: Theme.font-lg;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                    }
                     Rectangle {
-                        width: 8px; height: 8px;
-                        border-radius: 4px;
-                        background: AppState.connected ? Theme.accent-green : Theme.text-disabled;
-                        animate background { duration: 300ms; }
+                        width: 24px; height: 24px;
+                        border-radius: 12px;
+                        background: Theme.bg-panel;
+                        Text {
+                            text: "✕";
+                            color: Theme.text-dim;
+                            font-size: Theme.font-sm;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                        TouchArea { clicked => { root.help-visible = false; } }
                     }
+                }
 
-                    Rectangle { width: Theme.pad-sm; }
+                Rectangle { height: 1px; background: Theme.border; }
 
-                    // Durum metni
+                for row in [
+                    ["W / ↑",     "İleri"],
+                    ["S / ↓",     "Geri"],
+                    ["A / ←",     "Sol dönüş"],
+                    ["D / →",     "Sağ dönüş"],
+                    ["Space",     "Acil durdurma"],
+                    ["1 / 2 / 3", "Vites seç"],
+                    ["L",         "Işık aç/kapat"],
+                    ["B",         "Fren aç/kapat"],
+                    ["C",         "Kamera sekmesi"],
+                    ["M",         "Harita sekmesi"],
+                ]: HorizontalLayout {
+                    spacing: Theme.pad-sm;
+                    Rectangle {
+                        width: 90px; height: 22px;
+                        background: Theme.bg-panel;
+                        border-radius: 3px;
+                        Text {
+                            text: row[0];
+                            color: Theme.accent-yellow;
+                            font-size: Theme.font-sm;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
                     Text {
-                        text: AppState.status-text;
+                        text: row[1];
                         color: Theme.text-dim;
-                        font-size: Theme.font-sm;
-                        vertical-alignment: center;
-                    }
-
-                    Rectangle { horizontal-stretch: 1; }
-
-                    // GPS koordinatı (harita aktifken)
-                    if (AppState.gps-active && AppState.gps-point-count > 0): Text {
-                        text: "🛰 " +
-                              round(AppState.gps-lat * 10000) / 10000 + "°  " +
-                              round(AppState.gps-lon * 10000) / 10000 + "°";
-                        color: Theme.accent-green;
-                        font-size: Theme.font-sm;
-                        vertical-alignment: center;
-                    }
-
-                    Rectangle { width: Theme.pad-md; }
-
-                    // Motor durumu
-                    if (AppState.motor-running): Text {
-                        text: "● Motor: Çalışıyor";
-                        color: Theme.accent-green;
-                        font-size: Theme.font-sm;
-                        vertical-alignment: center;
-                    }
-
-                    Rectangle { width: Theme.pad-md; }
-
-                    Text {
-                        text: "v0.1.0";
-                        color: Theme.text-disabled;
                         font-size: Theme.font-sm;
                         vertical-alignment: center;
                     }
                 }
             }
         }
+
+        TouchArea { clicked => { root.help-visible = false; } }
     }
 }
