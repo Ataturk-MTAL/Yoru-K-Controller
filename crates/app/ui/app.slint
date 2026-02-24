@@ -38,6 +38,19 @@ export component AppWindow inherits Window {
     callback enable-gps();
     callback disable-gps();
     callback set-detection-enabled(bool);
+    callback map-flicked(length, length);
+    callback map-zoom-changed(int);
+    callback map-zoom-in(length, length);
+    callback map-zoom-out(length, length);
+
+    // Rust → Slint: harita viewport'unu ayarla (zoom değiştiğinde)
+    public function set-map-viewport(ox: length, oy: length, w: length, h: length) {
+        map-view.set-viewport(ox, oy, w, h);
+    }
+
+    // Rust → Slint: harita viewport boyutunu oku
+    out property <length> map-visible-width:  map-view.visible-width;
+    out property <length> map-visible-height: map-view.visible-height;
 
     // Dark tema zorla — tüm native widgetları (Button, ComboBox, SpinBox vb.) etkiler
     init => { Palette.color-scheme = ColorScheme.dark; }
@@ -205,20 +218,32 @@ export component AppWindow inherits Window {
                 spacing: 0px;
 
                 // ══ SOL PANEL: Kamera / Harita ════════════
-                // if/else ile sekme — CameraView/MapView kendi içinde
-                // tam genişlik/yükseklik alır, overlay butonları kendisi yönetir
-                if (AppState.active-tab == 0): CameraView {
+                // Her iki tab da her zaman mevcut — `visible` ile seçim yapılır.
+                // MapView'ın set-viewport public function'ına Rust'tan erişim gerekiyor.
+                Rectangle {
                     horizontal-stretch: 1;
-                    start-camera(i)             => { root.start-camera(i); }
-                    stop-camera()               => { root.stop-camera(); }
-                    refresh-cameras()           => { root.refresh-cameras(); }
-                    set-detection-enabled(v)    => { root.set-detection-enabled(v); }
-                }
 
-                if (AppState.active-tab == 1): MapView {
-                    horizontal-stretch: 1;
-                    enable-gps()  => { root.enable-gps(); }
-                    disable-gps() => { root.disable-gps(); }
+                    CameraView {
+                        visible: AppState.active-tab == 0;
+                        width: parent.width;
+                        height: parent.height;
+                        start-camera(i)             => { root.start-camera(i); }
+                        stop-camera()               => { root.stop-camera(); }
+                        refresh-cameras()           => { root.refresh-cameras(); }
+                        set-detection-enabled(v)    => { root.set-detection-enabled(v); }
+                    }
+
+                    map-view := MapView {
+                        visible: AppState.active-tab == 1;
+                        width: parent.width;
+                        height: parent.height;
+                        enable-gps()              => { root.enable-gps(); }
+                        disable-gps()             => { root.disable-gps(); }
+                        map-flicked(ox, oy)       => { root.map-flicked(ox, oy); }
+                        map-zoom-changed(z)       => { root.map-zoom-changed(z); }
+                        map-zoom-in(mx, my)       => { root.map-zoom-in(mx, my); }
+                        map-zoom-out(mx, my)      => { root.map-zoom-out(mx, my); }
+                    }
                 }
 
                 // ══ SAĞ PANEL: Kontrol ════════════════════

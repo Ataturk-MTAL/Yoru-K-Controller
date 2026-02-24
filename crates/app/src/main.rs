@@ -1,6 +1,7 @@
 slint::include_modules!();
 
 mod bridge;
+mod map;
 
 use std::{
     sync::{mpsc, Arc, Mutex, atomic::{AtomicBool, Ordering}},
@@ -18,6 +19,7 @@ use vision::camera::{spawn_camera, list_cameras, CameraEvent};
 use vision::{SharedFrame, SharedDetections};
 
 use bridge::{SharedState, run_bridge, run_periodic_send, update_joystick_speeds, run_detection};
+use map::{MapWorld, MapState};
 
 fn main() -> Result<()> {
     // ── Loglama ─────────────────────────────────────────
@@ -269,6 +271,83 @@ fn main() -> Result<()> {
     let det_enabled_cb = detection_enabled.clone();
     ui.on_set_detection_enabled(move |v| {
         det_enabled_cb.store(v, Ordering::Relaxed);
+    });
+
+    // ═══════════════════════════════════════════════════
+    // Harita tile sistemi (MapState — Rc tabanlı, Slint event loop'ta çalışır)
+    // ═══════════════════════════════════════════════════
+    let mut map_world = MapWorld::new();
+    // Varsayılan merkez: Mersin
+    map_world.center_on(36.8121, 34.6415);
+    map_world.request_visible_tiles();
+
+    let map_state = std::rc::Rc::new(MapState {
+        world: std::cell::RefCell::new(map_world),
+        ui_weak: ui.as_weak(),
+        poll_handle: std::cell::RefCell::new(None),
+    });
+
+    // Viewport'u ilk kez ayarla
+    map_state.set_viewport();
+
+    // İlk tile yükleme başlat
+    map_state.clone().do_poll();
+
+    // Map callback'leri — her callback'te visible_width/height güncellenir
+    let ms = map_state.clone();
+    let ui_w = ui.as_weak();
+    ui.on_map_flicked(move |ox, oy| {
+        let Some(u) = ui_w.upgrade() else { return };
+        let mut world = ms.world.borrow_mut();
+        world.offset_x = -ox as f64;
+        world.offset_y = -oy as f64;
+        world.visible_width  = u.get_map_visible_width() as f64;
+        world.visible_height = u.get_map_visible_height() as f64;
+        world.request_visible_tiles();
+        drop(world);
+        ms.clone().do_poll();
+    });
+
+    let ms = map_state.clone();
+    let ui_w = ui.as_weak();
+    ui.on_map_zoom_changed(move |zoom| {
+        let Some(u) = ui_w.upgrade() else { return };
+        let mut world = ms.world.borrow_mut();
+        world.visible_width  = u.get_map_visible_width() as f64;
+        world.visible_height = u.get_map_visible_height() as f64;
+        let (vw, vh) = (world.visible_width, world.visible_height);
+        world.set_zoom_level(zoom as u32, vw / 2.0, vh / 2.0);
+        drop(world);
+        ms.set_viewport();
+        ms.clone().do_poll();
+    });
+
+    let ms = map_state.clone();
+    let ui_w = ui.as_weak();
+    ui.on_map_zoom_in(move |ox, oy| {
+        let Some(u) = ui_w.upgrade() else { return };
+        let mut world = ms.world.borrow_mut();
+        world.visible_width  = u.get_map_visible_width() as f64;
+        world.visible_height = u.get_map_visible_height() as f64;
+        let z = (world.zoom_level + 1).min(19);
+        world.set_zoom_level(z, ox as f64, oy as f64);
+        drop(world);
+        ms.set_viewport();
+        ms.clone().do_poll();
+    });
+
+    let ms = map_state.clone();
+    let ui_w = ui.as_weak();
+    ui.on_map_zoom_out(move |ox, oy| {
+        let Some(u) = ui_w.upgrade() else { return };
+        let mut world = ms.world.borrow_mut();
+        world.visible_width  = u.get_map_visible_width() as f64;
+        world.visible_height = u.get_map_visible_height() as f64;
+        let z = world.zoom_level.saturating_sub(1).max(1);
+        world.set_zoom_level(z, ox as f64, oy as f64);
+        drop(world);
+        ms.set_viewport();
+        ms.clone().do_poll();
     });
 
     // ═══════════════════════════════════════════════════

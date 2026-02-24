@@ -1,3 +1,10 @@
+// Harita tile yapısı — Flickable içinde konumlanır
+export struct MapTile {
+    x: length,
+    y: length,
+    tile: image,
+}
+
 // Merkezi uygulama durumu — tüm bileşenler bu global'i okur/yazar
 export global AppState {
     // ── Bağlantı ────────────────────────────────────────
@@ -42,6 +49,12 @@ export global AppState {
     in-out property <float> gps-lon-min:     0.0;    // İz sınırı: min boylam
     in-out property <float> gps-lon-max:     0.0;    // İz sınırı: max boylam
     in-out property <int>   gps-point-count: 0;      // Toplam iz noktası sayısı
+
+    // ── Harita tile'ları ──────────────────────────────────
+    in property <[MapTile]> map-tiles;
+    in-out property <int>   map-zoom: 15;            // OSM zoom seviyesi (1-19)
+    in property <length>    map-marker-x;            // Robot marker pixel pozisyonu
+    in property <length>    map-marker-y;
 
     // ── Sol panel aktif sekme ────────────────────────────
     in-out property <int>   active-tab: 0;           // 0 = Kamera, 1 = Harita

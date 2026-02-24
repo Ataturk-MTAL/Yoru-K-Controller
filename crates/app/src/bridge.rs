@@ -19,6 +19,7 @@ use vision::{SharedFrame, SharedDetections, YoloDetector, draw_detections};
 
 use crate::AppWindow;
 use crate::AppState;
+use crate::map::lat_lon_to_tile;
 
 /// Paylaşılan uygulama durumu (thread'ler arası)
 pub struct SharedState {
@@ -96,6 +97,12 @@ pub fn run_bridge(
                                 state.set_gps_lon_min(lon_min);
                                 state.set_gps_lon_max(lon_max);
                                 state.set_gps_point_count(count);
+
+                                // Harita marker pozisyonunu güncelle
+                                let zoom = state.get_map_zoom() as u32;
+                                let (tx, ty) = lat_lon_to_tile(lat as f64, lon as f64, zoom);
+                                state.set_map_marker_x((tx * 256.0) as f32);
+                                state.set_map_marker_y((ty * 256.0) as f32);
                             });
                         }
                         _ => {
