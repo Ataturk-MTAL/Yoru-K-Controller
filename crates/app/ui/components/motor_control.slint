@@ -1,5 +1,6 @@
 import { AppState } from "../state.slint";
 import { Theme }    from "../theme.slint";
+import { SpinBox }  from "std-widgets.slint";
 
 export component MotorControl {
     callback start();
@@ -91,7 +92,7 @@ export component MotorControl {
                 }
             }
 
-            // Vites seçimi
+            // Vites seçimi  |◀| |2| |▶|
             HorizontalLayout {
                 spacing: Theme.pad-xs;
                 alignment: center;
@@ -104,33 +105,62 @@ export component MotorControl {
                     width: 50px;
                 }
 
-                for g in [1, 2, 3]: gear-btn := Rectangle {
+                // ◀ azalt
+                Rectangle {
                     border-radius: Theme.radius;
                     height: 28px;
-                    width: 44px;
+                    width: 32px;
+                    background: AppState.gear > 1 ? Theme.bg-panel : Theme.text-disabled;
+                    animate background { duration: 100ms; }
 
-                    gear-label := Text {
-                        text: "V\{g}";
+                    Text {
+                        text: "◀";
+                        color: AppState.gear > 1 ? Theme.text-primary : Theme.bg-panel;
                         font-size: Theme.font-md;
                         horizontal-alignment: center;
                         vertical-alignment: center;
                     }
                     TouchArea {
-                        clicked => { root.set-gear(g); }
+                        clicked => {
+                            if (AppState.gear > 1) {
+                                root.set-gear(AppState.gear - 1);
+                            }
+                        }
                     }
+                }
 
-                    states [
-                        selected when AppState.gear == g: {
-                            background: Theme.accent;
-                            gear-label.color: white;
-                            in { animate background { duration: 100ms; } }
+                // SpinBox — elle girilebilir (1-3)
+                SpinBox {
+                    minimum: 1;
+                    maximum: 3;
+                    value: AppState.gear;
+                    width: 70px;
+                    height: 28px;
+                    edited(v) => { root.set-gear(v); }
+                }
+
+                // ▶ artır
+                Rectangle {
+                    border-radius: Theme.radius;
+                    height: 28px;
+                    width: 32px;
+                    background: AppState.gear < 3 ? Theme.bg-panel : Theme.text-disabled;
+                    animate background { duration: 100ms; }
+
+                    Text {
+                        text: "▶";
+                        color: AppState.gear < 3 ? Theme.text-primary : Theme.bg-panel;
+                        font-size: Theme.font-md;
+                        horizontal-alignment: center;
+                        vertical-alignment: center;
+                    }
+                    TouchArea {
+                        clicked => {
+                            if (AppState.gear < 3) {
+                                root.set-gear(AppState.gear + 1);
+                            }
                         }
-                        unselected when AppState.gear != g: {
-                            background: Theme.bg-panel;
-                            gear-label.color: Theme.text-primary;
-                            in { animate background { duration: 100ms; } }
-                        }
-                    ]
+                    }
                 }
             }
 
