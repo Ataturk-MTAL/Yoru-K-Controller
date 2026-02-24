@@ -1,0 +1,178 @@
+// ============================================================================
+//  AppTheme — Slint Dark/Light Theme Package
+//  Palette.color-scheme ile otomatik dark/light geçişi
+//  Endüstriyel / IoT / Embedded projelere uygun semantic renk seti
+// ============================================================================
+
+import { Palette } from "std-widgets.slint";
+
+// ── Renk Şeması Enum (Palette.color-scheme yerine kendi toggle) ──
+export enum ThemeMode { dark, light }
+
+// ── Ana Tema Global ──
+export global AppTheme {
+    // ── Mod Kontrolü ──
+    // Palette.color-scheme ile senkron — dışarıdan Rust ile de set edilebilir
+    in-out property <bool> dark: Palette.color-scheme == ColorScheme.dark;
+
+    // ── Yüzey Renkleri (Surface) ──
+    out property <brush> bg:
+        dark ? #0f1117 : #f8f9fc;
+    out property <brush> bg-secondary:
+        dark ? #161923 : #f0f1f5;
+    out property <brush> bg-tertiary:
+        dark ? #1c2030 : #e6e8ee;
+
+    out property <brush> surface:
+        dark ? #1a1e2e : #ffffff;
+    out property <brush> surface-raised:
+        dark ? #222638 : #ffffff;
+    out property <brush> surface-overlay:
+        dark ? #2a2f44 : #f4f5f7;
+    out property <brush> surface-sunken:
+        dark ? #0b0d14 : #edeef2;
+
+    // ── Metin Renkleri (Typography) ──
+    out property <brush> text-primary:
+        dark ? #e8eaf0 : #1a1c24;
+    out property <brush> text-secondary:
+        dark ? #9ca0b0 : #5c6070;
+    out property <brush> text-tertiary:
+        dark ? #636778 : #8b8fa0;
+    out property <brush> text-disabled:
+        dark ? #464a5c : #b8bac4;
+    out property <brush> text-inverse:
+        dark ? #1a1c24 : #f0f1f5;
+
+    // ── Vurgu Renkleri (Accent / Brand) ──
+    out property <brush> accent:
+        dark ? #5b8af5 : #3b6ee6;
+    out property <brush> accent-hover:
+        dark ? #7aa2ff : #2d5cc8;
+    out property <brush> accent-pressed:
+        dark ? #4470d6 : #1f4aaa;
+    out property <brush> accent-subtle:
+        dark ? #1e2a4a : #e8effc;
+    out property <brush> accent-text:
+        #ffffff;
+
+    // ── Semantic: Başarı (Success / Running / Online) ──
+    out property <brush> success:
+        dark ? #3dd68c : #22a366;
+    out property <brush> success-hover:
+        dark ? #5aeaa6 : #1b8a55;
+    out property <brush> success-subtle:
+        dark ? #132e22 : #e6f7ef;
+    out property <brush> success-text:
+        dark ? #3dd68c : #15794a;
+
+    // ── Semantic: Uyarı (Warning / Caution) ──
+    out property <brush> warning:
+        dark ? #f5b731 : #d99a00;
+    out property <brush> warning-hover:
+        dark ? #ffc94d : #c08800;
+    out property <brush> warning-subtle:
+        dark ? #302414 : #fdf4e0;
+    out property <brush> warning-text:
+        dark ? #f5b731 : #8a6200;
+
+    // ── Semantic: Hata / Tehlike (Error / Danger / Fault) ──
+    out property <brush> error:
+        dark ? #f06565 : #dc3545;
+    out property <brush> error-hover:
+        dark ? #ff8080 : #c82333;
+    out property <brush> error-subtle:
+        dark ? #301818 : #fce8ea;
+    out property <brush> error-text:
+        dark ? #f06565 : #a71d2a;
+
+    // ── Semantic: Bilgi (Info) ──
+    out property <brush> info:
+        dark ? #40b8e0 : #1794c4;
+    out property <brush> info-subtle:
+        dark ? #122830 : #e4f4fb;
+    out property <brush> info-text:
+        dark ? #40b8e0 : #106d94;
+
+    // ── Kontrol Renkleri (Buttons, Inputs, Cards) ──
+    out property <brush> control-bg:
+        dark ? #222638 : #ffffff;
+    out property <brush> control-bg-hover:
+        dark ? #2a2f44 : #f4f5f7;
+    out property <brush> control-bg-pressed:
+        dark ? #1a1e2e : #edeef2;
+    out property <brush> control-bg-disabled:
+        dark ? #181b26 : #f0f1f5;
+    out property <brush> control-fg:
+        dark ? #d0d3de : #2c2f3a;
+    out property <brush> control-fg-disabled:
+        dark ? #464a5c : #b0b3be;
+
+    // ── Kenarlıklar (Borders) ──
+    out property <brush> border-default:
+        dark ? #2e3348 : #d8dae0;
+    out property <brush> border-strong:
+        dark ? #3e4460 : #c0c3cc;
+    out property <brush> border-subtle:
+        dark ? #222638 : #e8eaee;
+    out property <brush> border-focus:
+        dark ? #5b8af5 : #3b6ee6;
+
+    // ── Endüstriyel / IoT Özel Renkler ──
+    out property <brush> motor-running:
+        dark ? #3dd68c : #22a366;
+    out property <brush> motor-stopped:
+        dark ? #636778 : #8b8fa0;
+    out property <brush> motor-fault:
+        dark ? #f06565 : #dc3545;
+    out property <brush> sensor-online:
+        dark ? #3dd68c : #22a366;
+    out property <brush> sensor-offline:
+        dark ? #f06565 : #dc3545;
+    out property <brush> sensor-warning:
+        dark ? #f5b731 : #d99a00;
+    out property <brush> value-normal:
+        dark ? #40b8e0 : #1794c4;
+    out property <brush> value-high:
+        dark ? #f5b731 : #d99a00;
+    out property <brush> value-critical:
+        dark ? #f06565 : #dc3545;
+
+    // ── Gölge / Elevation ──
+    out property <brush> shadow:
+        dark ? #00000060 : #0000001a;
+    out property <brush> scrim:
+        dark ? #000000aa : #00000055;
+
+    // ── Boşluk Tokenleri (Spacing) ──
+    out property <length> space-xs:   2px;
+    out property <length> space-sm:   4px;
+    out property <length> space-md:   8px;
+    out property <length> space-lg:  12px;
+    out property <length> space-xl:  16px;
+    out property <length> space-2xl: 24px;
+    out property <length> space-3xl: 32px;
+
+    // ── Yuvarlatma (Radius) ──
+    out property <length> radius-xs:   2px;
+    out property <length> radius-sm:   4px;
+    out property <length> radius-md:   6px;
+    out property <length> radius-lg:   8px;
+    out property <length> radius-xl:  12px;
+    out property <length> radius-2xl: 16px;
+    out property <length> radius-full: 999px;
+
+    // ── Tipografi Boyutları ──
+    out property <length> font-xs:   10px;
+    out property <length> font-sm:   12px;
+    out property <length> font-md:   14px;
+    out property <length> font-lg:   16px;
+    out property <length> font-xl:   20px;
+    out property <length> font-2xl:  24px;
+    out property <length> font-3xl:  30px;
+
+    // ── Geçiş Süreleri ──
+    out property <duration> anim-fast:   100ms;
+    out property <duration> anim-normal: 180ms;
+    out property <duration> anim-slow:   300ms;
+}

@@ -1,5 +1,5 @@
 import { AppState } from "../state.slint";
-import { Theme }    from "../theme.slint";
+import { AppTheme } from "../theme/theme.slint";
 
 export component JoystickPanel {
     callback moved(float, float, float);   // dx, dy, max_radius
@@ -7,34 +7,33 @@ export component JoystickPanel {
 
     min-height: 220px;
 
-    // Hesaplama property'leri (root seviyesinde)
-    property <float> cx:      self.width / 2 / 1px;
-    property <float> cy:      self.height / 2 / 1px;
-    property <float> max-r:   min(self.width, self.height) / 2 / 1px - 30;
-    property <float> stick-x: cx;
-    property <float> stick-y: cy;
+    // max-r outer-ring bazlı hesaplanıyor (outer-ring boyutu: min(parent)-20px)
+    // Buraya outer-ring boyutunu yansıtan bir property ekliyoruz
     property <bool>  dragging: false;
 
-    // Touch pozisyonundan hesaplanan ara değerler
+    // Knob offset — merkeze göre piksel cinsinden (outer-ring relative)
+    property <float> clamp-dx:  0;   // sola-sağa offset (piksel)
+    property <float> clamp-dy:  0;   // yukarı-aşağı offset (piksel, yukarı pozitif)
+
+    // Touch hesaplama ara değerleri
     property <float> raw-dx:    0;
     property <float> raw-dy:    0;
     property <float> dist:      0;
     property <float> factor:    1.0;
-    property <float> clamp-dx:  0;
-    property <float> clamp-dy:  0;
 
     Rectangle {
-        background: Theme.bg-card;
-        border-radius: Theme.radius;
+        background: AppTheme.surface;
+        border-radius: AppTheme.radius-lg;
 
         VerticalLayout {
-            padding: Theme.pad-sm;
-            spacing: Theme.pad-xs;
+            padding: AppTheme.space-lg;
+            spacing: AppTheme.space-md;
 
             Text {
-                text: "JOYSTICK";
-                color: Theme.text-dim;
-                font-size: Theme.font-sm;
+                text: "SÜRÜŞ KUMANDA KOLU";
+                color: AppTheme.text-secondary;
+                font-size: AppTheme.font-xs;
+                font-weight: 600;
                 letter-spacing: 1.5px;
             }
 
@@ -53,56 +52,81 @@ export component JoystickPanel {
                     border-radius: self.width / 2;
                     border-width: 2px;
 
+                    // max-r: outer-ring yarıçapı — knob merkezi daire içinde kalır, knob yarısı dışarı taşabilir
+                    property <float> max-r: self.width / 2 / 1px;
+
                     states [
                         connected when AppState.connected: {
-                            background: #1a2a3a;
-                            border-color: Theme.border-active;
+                            background: AppTheme.surface-sunken;
+                            border-color: AppTheme.success.transparentize(50%);
                             in {
-                                animate background { duration: 200ms; }
-                                animate border-color { duration: 200ms; }
+                                animate background { duration: AppTheme.anim-normal; }
+                                animate border-color { duration: AppTheme.anim-normal; }
                             }
                         }
                         disconnected when !AppState.connected: {
-                            background: #111111;
-                            border-color: Theme.border;
+                            background: AppTheme.surface-sunken;
+                            border-color: AppTheme.border-default;
                             in {
-                                animate background { duration: 200ms; }
-                                animate border-color { duration: 200ms; }
+                                animate background { duration: AppTheme.anim-normal; }
+                                animate border-color { duration: AppTheme.anim-normal; }
                             }
                         }
                     ]
 
-                    // Eksen çizgisi yatay
+                    // ── Tolerans bantları (snap zone görseli) ────
+                    // Dikey bant: düz ileri/geri snap alanı (%8 sağ + %8 sol = %16)
                     Rectangle {
-                        x: 0px; y: parent.height / 2 - 1px;
-                        width: parent.width; height: 1px;
-                        background: Theme.border;
-                        opacity: 0.15;
+                        x: parent.width * 0.42;
+                        y: 0px;
+                        width: parent.width * 0.16;
+                        height: parent.height;
+                        background: AppTheme.border-subtle;
+                        opacity: 0.08;
                     }
-                    // Eksen çizgisi dikey
+                    // Yatay bant: saf dönüş snap alanı
                     Rectangle {
-                        x: parent.width / 2 - 1px; y: 0px;
-                        width: 1px; height: parent.height;
-                        background: Theme.border;
-                        opacity: 0.15;
+                        x: 0px;
+                        y: parent.height * 0.42;
+                        width: parent.width;
+                        height: parent.height * 0.16;
+                        background: AppTheme.border-subtle;
+                        opacity: 0.08;
+                    }
+
+                    // ── + Kılavuz çizgileri ──────────────────────
+                    // Yatay çizgi
+                    Rectangle {
+                        x: 0px;
+                        y: parent.height / 2 - self.height / 2;
+                        width: parent.width;
+                        height: 2px;
+                        background: AppTheme.border-default;
+                        opacity: 0.4;
+                    }
+                    // Dikey çizgi
+                    Rectangle {
+                        x: parent.width / 2 - self.width / 2;
+                        y: 0px;
+                        width: 2px;
+                        height: parent.height;
+                        background: AppTheme.border-default;
+                        opacity: 0.4;
                     }
 
                     // Merkez nokta
                     Rectangle {
-                        x: parent.width / 2 - 3px;
-                        y: parent.height / 2 - 3px;
-                        width: 6px; height: 6px;
-                        border-radius: 3px;
-                        background: Theme.text-dim;
+                        x: parent.width / 2 - 4px;
+                        y: parent.height / 2 - 4px;
+                        width: 8px; height: 8px;
+                        border-radius: 4px;
+                        background: AppTheme.text-secondary;
                     }
 
-                    // Joystick topu
+                    // Joystick topu — pozisyon doğrudan clamp-dx/dy offset ile
                     knob := Rectangle {
-                        property <float> kx: stick-x - cx;
-                        property <float> ky: stick-y - cy;
-
-                        x: parent.width / 2 + kx * 1px - self.width / 2;
-                        y: parent.height / 2 + ky * 1px - self.height / 2;
+                        x: parent.width / 2 + clamp-dx * 1px - self.width / 2;
+                        y: parent.height / 2 - clamp-dy * 1px - self.height / 2;
                         width: 56px; height: 56px;
                         border-radius: self.width / 2;
                         border-width: 2px;
@@ -120,45 +144,45 @@ export component JoystickPanel {
 
                         states [
                             drag-conn when dragging && AppState.connected: {
-                                background: Theme.accent-green;
-                                border-color: Theme.accent-green;
-                                center-light.background: Theme.accent-green;
+                                background: AppTheme.success;
+                                border-color: AppTheme.success;
+                                center-light.background: AppTheme.success;
                                 in {
                                     animate background { duration: 80ms; }
                                     animate border-color { duration: 80ms; }
                                 }
                             }
                             drag-disc when dragging && !AppState.connected: {
-                                background: Theme.accent;
-                                border-color: Theme.text-dim;
-                                center-light.background: Theme.text-dim;
+                                background: AppTheme.error;
+                                border-color: AppTheme.text-tertiary;
+                                center-light.background: AppTheme.text-tertiary;
                                 in { animate background { duration: 80ms; } }
                             }
                             idle-motor when !dragging && AppState.connected && AppState.motor-running: {
-                                background: #2a6a4a;
-                                border-color: Theme.accent-green;
-                                center-light.background: Theme.accent-green;
+                                background: AppTheme.success.transparentize(50%);
+                                border-color: AppTheme.success;
+                                center-light.background: AppTheme.success;
                                 in {
-                                    animate background { duration: 200ms; }
-                                    animate center-light.background { duration: 200ms; }
+                                    animate background { duration: AppTheme.anim-normal; }
+                                    animate center-light.background { duration: AppTheme.anim-normal; }
                                 }
                             }
                             idle-conn when !dragging && AppState.connected && !AppState.motor-running: {
-                                background: #2a6a4a;
-                                border-color: Theme.accent-green;
-                                center-light.background: Theme.text-dim;
+                                background: AppTheme.success.transparentize(50%);
+                                border-color: AppTheme.success;
+                                center-light.background: AppTheme.text-tertiary;
                                 in {
                                     animate background { duration: 120ms; }
-                                    animate center-light.background { duration: 200ms; }
+                                    animate center-light.background { duration: AppTheme.anim-normal; }
                                 }
                             }
                             idle-disc when !dragging && !AppState.connected: {
-                                background: Theme.bg-card;
-                                border-color: Theme.text-dim;
-                                center-light.background: Theme.text-dim;
+                                background: AppTheme.control-bg;
+                                border-color: AppTheme.text-tertiary;
+                                center-light.background: AppTheme.text-tertiary;
                                 in {
                                     animate background { duration: 120ms; }
-                                    animate border-color { duration: 200ms; }
+                                    animate border-color { duration: AppTheme.anim-normal; }
                                 }
                             }
                         ]
@@ -170,23 +194,18 @@ export component JoystickPanel {
                             dragging = true;
 
                             // mouse-x/y outer-ring içinde relative koordinat
-                            raw-dx = touch.mouse-x / 1px - parent.width / 2 / 1px;
-                            raw-dy = parent.height / 2 / 1px - touch.mouse-y / 1px;
+                            raw-dx = touch.mouse-x / 1px - outer-ring.width / 2 / 1px;
+                            raw-dy = outer-ring.height / 2 / 1px - touch.mouse-y / 1px;
                             dist   = sqrt(raw-dx * raw-dx + raw-dy * raw-dy);
-                            factor = dist > max-r ? (max-r / dist) : 1.0;
+                            factor = dist > outer-ring.max-r ? (outer-ring.max-r / dist) : 1.0;
                             clamp-dx = raw-dx * factor;
                             clamp-dy = raw-dy * factor;
 
-                            stick-x = cx + clamp-dx;
-                            stick-y = cy - clamp-dy;
-
-                            root.moved(clamp-dx, clamp-dy, max-r);
+                            root.moved(clamp-dx, clamp-dy, outer-ring.max-r);
                         }
                         pointer-event(e) => {
                             if (e.kind == PointerEventKind.up || e.kind == PointerEventKind.cancel) {
                                 dragging  = false;
-                                stick-x   = cx;
-                                stick-y   = cy;
                                 clamp-dx  = 0;
                                 clamp-dy  = 0;
                                 root.released();
@@ -194,14 +213,6 @@ export component JoystickPanel {
                         }
                     }
                 }
-            }
-
-            // Klavye ipucu
-            Text {
-                text: "WASD / Ok tuşları  •  Space = DUR";
-                color: Theme.text-dim;
-                font-size: Theme.font-sm;
-                horizontal-alignment: center;
             }
         }
     }

@@ -1,16 +1,9 @@
 import { AppState, MapTile } from "../state.slint";
-import { Theme }             from "../theme.slint";
-import { Slider }            from "std-widgets.slint";
+import { AppTheme }         from "../theme/theme.slint";
+import { Slider }           from "std-widgets.slint";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // MapView — OpenStreetMap tile haritası + GPS robot marker
-//
-// Flickable içinde tile grid gösterilir. Scroll-event ile zoom in/out yapılır.
-// GPS aktifken robot konumu yeşil marker ile gösterilir.
-//
-// Viewport kontrolü:
-//   set-viewport() public function — Rust zoom değiştiğinde çağırır
-//   flicked callback — kullanıcı sürüklediğinde Rust'a bildirir
 // ─────────────────────────────────────────────────────────────────────────────
 export component MapView {
     callback enable-gps();
@@ -34,7 +27,7 @@ export component MapView {
 
     // ── Arkaplan ─────────────────────────────────────────
     Rectangle {
-        background: #0a0f1a;
+        background: AppTheme.bg;
 
         // ── Tile harita alanı ────────────────────────────
         fli := Flickable {
@@ -59,14 +52,14 @@ export component MapView {
                 scroll-event(e) => {
                     if (e.delta-y > 0) {
                         root.map-zoom-in(
-                            self.mouse-x - fli.viewport-x,
-                            self.mouse-y - fli.viewport-y
+                            self.mouse-x + fli.viewport-x,
+                            self.mouse-y + fli.viewport-y
                         );
                         return accept;
                     } else if (e.delta-y < 0) {
                         root.map-zoom-out(
-                            self.mouse-x - fli.viewport-x,
-                            self.mouse-y - fli.viewport-y
+                            self.mouse-x + fli.viewport-x,
+                            self.mouse-y + fli.viewport-y
                         );
                         return accept;
                     }
@@ -81,7 +74,7 @@ export component MapView {
                 width: 16px;
                 height: 16px;
                 border-radius: 8px;
-                background: Theme.accent-green;
+                background: AppTheme.success;
                 border-color: white;
                 border-width: 2px;
                 animate x { duration: 200ms; easing: ease-out; }
@@ -94,9 +87,8 @@ export component MapView {
                     width: 28px;
                     height: 28px;
                     border-radius: 14px;
-                    border-color: Theme.accent-green;
+                    border-color: AppTheme.success.transparentize(60%);
                     border-width: 2px;
-                    opacity: 0.4;
                 }
             }
         }
@@ -105,14 +97,14 @@ export component MapView {
         zoom-bar := HorizontalLayout {
             y: parent.height - self.height;
             height: 32px;
-            padding-left: Theme.pad-md;
-            padding-right: Theme.pad-md;
-            spacing: Theme.pad-sm;
+            padding-left: AppTheme.space-xl;
+            padding-right: AppTheme.space-xl;
+            spacing: AppTheme.space-md;
 
             Text {
                 text: "−";
-                color: Theme.text-dim;
-                font-size: Theme.font-lg;
+                color: AppTheme.text-secondary;
+                font-size: AppTheme.font-lg;
                 vertical-alignment: center;
             }
 
@@ -128,15 +120,15 @@ export component MapView {
 
             Text {
                 text: "+";
-                color: Theme.text-dim;
-                font-size: Theme.font-lg;
+                color: AppTheme.text-secondary;
+                font-size: AppTheme.font-lg;
                 vertical-alignment: center;
             }
 
             Text {
                 text: "z" + AppState.map-zoom;
-                color: Theme.text-dim;
-                font-size: Theme.font-sm;
+                color: AppTheme.text-tertiary;
+                font-size: AppTheme.font-sm;
                 vertical-alignment: center;
                 width: 30px;
             }
@@ -146,24 +138,26 @@ export component MapView {
         HorizontalLayout {
             y: parent.height - zoom-bar.height - self.height - 8px;
             x: 8px;
-            spacing: Theme.pad-xs;
+            spacing: AppTheme.space-sm;
             width: 200px;
             height: 32px;
 
             Rectangle {
-                background: AppState.gps-active ? Theme.accent : Theme.accent-green;
-                border-radius: Theme.radius;
+                background: AppState.gps-active ? AppTheme.error : AppTheme.success;
+                border-radius: AppTheme.radius-md;
                 horizontal-stretch: 1;
-                animate background { duration: 150ms; }
+                animate background { duration: AppTheme.anim-fast; }
 
                 Text {
                     text: AppState.gps-active ? "■ GPS Durdur" : "▶ GPS Başlat";
-                    color: white;
-                    font-size: Theme.font-sm;
+                    color: black;
+                    font-size: AppTheme.font-sm;
+                    font-weight: 500;
                     horizontal-alignment: center;
                     vertical-alignment: center;
                 }
                 TouchArea {
+                    mouse-cursor: pointer;
                     clicked => {
                         if (AppState.gps-active) {
                             root.disable-gps();
@@ -181,29 +175,30 @@ export component MapView {
             y: 8px;
             width: coord-layout.preferred-width + 16px;
             height: coord-layout.preferred-height + 8px;
-            background: #000000aa;
-            border-radius: 4px;
+            background: AppTheme.scrim;
+            border-radius: AppTheme.radius-md;
 
             coord-layout := VerticalLayout {
-                padding: 4px;
+                padding: AppTheme.space-sm;
                 spacing: 2px;
 
                 Text {
                     text: "● GPS  " + AppState.gps-point-count + " pkt";
-                    color: Theme.accent-green;
-                    font-size: Theme.font-sm;
+                    color: AppTheme.success;
+                    font-size: AppTheme.font-sm;
+                    font-weight: 500;
                 }
                 Text {
                     text: round(AppState.gps-lat * 10000) / 10000 + "° "
                         + (AppState.gps-lat >= 0.0 ? "N" : "S");
-                    color: Theme.text-primary;
-                    font-size: Theme.font-sm;
+                    color: AppTheme.text-primary;
+                    font-size: AppTheme.font-sm;
                 }
                 Text {
                     text: round(AppState.gps-lon * 10000) / 10000 + "° "
                         + (AppState.gps-lon >= 0.0 ? "E" : "W");
-                    color: Theme.text-primary;
-                    font-size: Theme.font-sm;
+                    color: AppTheme.text-primary;
+                    font-size: AppTheme.font-sm;
                 }
             }
         }
@@ -214,13 +209,13 @@ export component MapView {
             y: 8px;
             width: no-gps-text.preferred-width + 16px;
             height: 22px;
-            background: #00000088;
-            border-radius: 4px;
+            background: AppTheme.scrim;
+            border-radius: AppTheme.radius-sm;
 
             no-gps-text := Text {
                 text: "GPS kapalı";
-                color: Theme.text-disabled;
-                font-size: Theme.font-sm;
+                color: AppTheme.text-disabled;
+                font-size: AppTheme.font-sm;
                 horizontal-alignment: center;
                 vertical-alignment: center;
                 x: 8px;
@@ -232,13 +227,16 @@ export component MapView {
             x: 8px; y: 8px;
             height: 24px;
             width: gps-warn.preferred-width + 16px;
-            background: #cc000088;
-            border-radius: 4px;
+            background: AppTheme.error-subtle;
+            border-radius: AppTheme.radius-sm;
+            border-width: 1px;
+            border-color: AppTheme.error.transparentize(60%);
 
             gps-warn := Text {
                 text: "Robot bağlı değil";
-                color: white;
-                font-size: Theme.font-sm;
+                color: AppTheme.error-text;
+                font-size: AppTheme.font-sm;
+                font-weight: 500;
                 horizontal-alignment: center;
                 vertical-alignment: center;
                 x: 8px;
@@ -248,7 +246,7 @@ export component MapView {
         // ── OSM attribution ──────────────────────────────
         Text {
             text: "© OpenStreetMap";
-            color: Theme.text-disabled;
+            color: AppTheme.text-disabled;
             font-size: 9px;
             x: parent.width - self.width - 4px;
             y: parent.height - zoom-bar.height - self.height - 4px;

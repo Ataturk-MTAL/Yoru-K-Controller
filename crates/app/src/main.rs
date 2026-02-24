@@ -11,6 +11,8 @@ use std::{
 
 use anyhow::Result;
 use slint::Global;
+use tracing::info;
+#[cfg(debug_assertions)]
 use tracing_subscriber::EnvFilter;
 
 use protocol::{simple_packet, light_packet, brake_packet, gps_enable_packet, Command};
@@ -22,7 +24,8 @@ use bridge::{SharedState, run_bridge, run_periodic_send, update_joystick_speeds,
 use map::{MapWorld, MapState};
 
 fn main() -> Result<()> {
-    // ── Loglama ─────────────────────────────────────────
+    // ── Loglama (sadece debug build'de aktif) ────────────
+    #[cfg(debug_assertions)]
     tracing_subscriber::fmt()
         .with_env_filter(EnvFilter::from_default_env()
             .add_directive("app=debug".parse().unwrap()))
@@ -98,18 +101,34 @@ fn main() -> Result<()> {
     // Bağlantı
     let s = state.clone();
     ui.on_connect_serial(move |port, baud| {
+        info!(cmd = "BAĞLAN_SERİ", port = %port, baud, "Seri bağlantı kuruluyor");
         s.connection.lock().unwrap().connect_serial(&port, baud as u32);
     });
 
     let s = state.clone();
     ui.on_connect_tcp(move |host, port| {
+        info!(cmd = "BAĞLAN_TCP", host = %host, port, "TCP bağlantısı kuruluyor");
         s.connection.lock().unwrap().connect_tcp(&host, port as u16);
     });
 
     let s = state.clone();
     ui.on_disconnect(move || {
+        info!(cmd = "BAĞLANTI_KES", "Bağlantı kesiliyor");
         s.connection.lock().unwrap().disconnect();
         s.motor_running.store(false, Ordering::Relaxed);
+    });
+
+    ui.on_show_about(move || {
+        let about = AboutWindow::new().unwrap();
+        about.show().unwrap();
+    });
+
+    let ui_weak_validate = ui.as_weak();
+    ui.on_validate_host(move |host| {
+        let valid = host.parse::<std::net::Ipv4Addr>().is_ok();
+        if let Some(ui) = ui_weak_validate.upgrade() {
+            AppState::get(&ui).set_tcp_host_valid(valid);
+        }
     });
 
     let ui_weak_ports = ui.as_weak();
@@ -127,45 +146,82 @@ fn main() -> Result<()> {
 
     // Motor kontrol
     let s = state.clone();
+    let w = ui.as_weak();
     ui.on_send_start(move || {
         let pkt = simple_packet(Command::SetStart);
+        info!(cmd = "BAŞLAT", pkt = ?pkt, "Motor başlatma komutu gönderiliyor");
         s.connection.lock().unwrap().send(pkt);
         s.motor_running.store(true, Ordering::Relaxed);
+        if let Some(u) = w.upgrade() {
+            AppState::get(&u).set_motor_running(true);
+        }
     });
 
     let s = state.clone();
+    let w = ui.as_weak();
     ui.on_send_stop(move || {
         let pkt = simple_packet(Command::SetStop);
+        info!(cmd = "DURDUR", pkt = ?pkt, "Motor durdurma komutu gönderiliyor");
         s.connection.lock().unwrap().send(pkt);
         s.motor_running.store(false, Ordering::Relaxed);
         *s.speeds.lock().unwrap() = Default::default();
+        if let Some(u) = w.upgrade() {
+            AppState::get(&u).set_motor_running(false);
+        }
     });
 
     let s = state.clone();
+    let w = ui.as_weak();
     ui.on_send_light(move |on| {
         let pkt = light_packet(on);
+        info!(cmd = "IŞIK", on, pkt = ?pkt, "Işık komutu gönderiliyor");
         s.connection.lock().unwrap().send(pkt);
+        if let Some(u) = w.upgrade() {
+            AppState::get(&u).set_light_on(on);
+        }
     });
 
     let s = state.clone();
+    let w = ui.as_weak();
     ui.on_send_brake(move |on| {
         let pkt = brake_packet(on);
+        info!(cmd = "FREN", on, pkt = ?pkt, "Fren komutu gönderiliyor");
         s.connection.lock().unwrap().send(pkt);
+        if let Some(u) = w.upgrade() {
+            AppState::get(&u).set_brake_on(on);
+        }
     });
 
     let s = state.clone();
     ui.on_set_gear(move |g| {
+        info!(cmd = "VİTES", gear = g, "Vites değiştirildi");
         s.gear.store(g as u8, Ordering::Relaxed);
     });
 
     let s = state.clone();
+    let w = ui.as_weak();
     ui.on_set_reverse_left(move |v| {
+        info!(cmd = "TERS_SOL", reverse = v, "Sol motor ters çevrildi");
         s.reverse_left.store(v, Ordering::Relaxed);
+        if v { s.reverse_right.store(false, Ordering::Relaxed); }
+        if let Some(u) = w.upgrade() {
+            let st = AppState::get(&u);
+            st.set_reverse_left(v);
+            if v { st.set_reverse_right(false); }
+        }
     });
 
     let s = state.clone();
+    let w = ui.as_weak();
     ui.on_set_reverse_right(move |v| {
+        info!(cmd = "TERS_SAĞ", reverse = v, "Sağ motor ters çevrildi");
         s.reverse_right.store(v, Ordering::Relaxed);
+        if v { s.reverse_left.store(false, Ordering::Relaxed); }
+        if let Some(u) = w.upgrade() {
+            let st = AppState::get(&u);
+            st.set_reverse_right(v);
+            if v { st.set_reverse_left(false); }
+        }
     });
 
     // Joystick

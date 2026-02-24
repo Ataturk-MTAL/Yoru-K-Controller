@@ -1,5 +1,6 @@
 import { AppState } from "../state.slint";
-import { Theme }    from "../theme.slint";
+import { AppTheme } from "../theme/theme.slint";
+import { TStatusDot, StatusLevel } from "../theme/components.slint";
 
 // Tek motor hız çubuğu bileşeni
 component SpeedBar {
@@ -9,19 +10,19 @@ component SpeedBar {
     height: 36px;
 
     Rectangle {
-        background: Theme.bg-panel;
-        border-radius: Theme.radius;
+        background: AppTheme.surface-sunken;
+        border-radius: AppTheme.radius-md;
 
         HorizontalLayout {
-            padding: Theme.pad-xs;
-            spacing: Theme.pad-xs;
+            padding: AppTheme.space-sm;
+            spacing: AppTheme.space-sm;
             alignment: center;
 
             // Etiket
             Text {
                 text: label;
-                color: Theme.text-dim;
-                font-size: Theme.font-sm;
+                color: AppTheme.text-secondary;
+                font-size: AppTheme.font-sm;
                 vertical-alignment: center;
                 width: 30px;
                 horizontal-alignment: left;
@@ -29,15 +30,15 @@ component SpeedBar {
 
             // Geri yön çubuğu (negatif hız)
             Rectangle {
-                background: Theme.bg-card;
-                border-radius: Theme.radius;
+                background: AppTheme.bg-tertiary;
+                border-radius: AppTheme.radius-sm;
                 horizontal-stretch: 1;
                 height: 12px;
 
                 // Geri hız doldurma (sağdan sola)
                 Rectangle {
-                    background: speed < 0 ? Theme.accent : transparent;
-                    border-radius: Theme.radius;
+                    background: speed < 0 ? AppTheme.error : transparent;
+                    border-radius: AppTheme.radius-sm;
                     width: speed < 0 ? (parent.width * (-speed / 100.0)) : 0px;
                     x: parent.width - self.width;
                     height: parent.height;
@@ -48,19 +49,19 @@ component SpeedBar {
             // Merkez işareti
             Rectangle {
                 width: 2px; height: 16px;
-                background: Theme.border;
+                background: AppTheme.border-default;
             }
 
             // İleri yön çubuğu (pozitif hız)
             Rectangle {
-                background: Theme.bg-card;
-                border-radius: Theme.radius;
+                background: AppTheme.bg-tertiary;
+                border-radius: AppTheme.radius-sm;
                 horizontal-stretch: 1;
                 height: 12px;
 
                 Rectangle {
-                    background: speed > 0 ? Theme.accent-green : transparent;
-                    border-radius: Theme.radius;
+                    background: speed > 0 ? AppTheme.success : transparent;
+                    border-radius: AppTheme.radius-sm;
                     width: speed > 0 ? (parent.width * (speed / 100.0)) : 0px;
                     height: parent.height;
                     animate width { duration: 80ms; }
@@ -70,8 +71,9 @@ component SpeedBar {
             // Sayısal değer
             Text {
                 text: (speed >= 0 ? "+" : "") + speed;
-                color: speed > 0 ? Theme.accent-green : (speed < 0 ? Theme.accent : Theme.text-dim);
-                font-size: Theme.font-sm;
+                color: speed > 0 ? AppTheme.success : (speed < 0 ? AppTheme.error : AppTheme.text-tertiary);
+                font-size: AppTheme.font-sm;
+                font-weight: 500;
                 vertical-alignment: center;
                 width: 32px;
                 horizontal-alignment: right;
@@ -82,17 +84,18 @@ component SpeedBar {
 
 export component SpeedDisplay {
     Rectangle {
-        background: Theme.bg-card;
-        border-radius: Theme.radius;
+        background: AppTheme.surface;
+        border-radius: AppTheme.radius-lg;
 
         VerticalLayout {
-            padding: Theme.pad-sm;
-            spacing: Theme.pad-xs;
+            padding: AppTheme.space-lg;
+            spacing: AppTheme.space-md;
 
             Text {
                 text: "HIZ GÖSTERGESİ";
-                color: Theme.text-dim;
-                font-size: Theme.font-sm;
+                color: AppTheme.text-secondary;
+                font-size: AppTheme.font-xs;
+                font-weight: 600;
                 letter-spacing: 1.5px;
             }
 
@@ -109,36 +112,34 @@ export component SpeedDisplay {
             // Vites göstergesi
             HorizontalLayout {
                 alignment: center;
-                spacing: Theme.pad-sm;
+                spacing: AppTheme.space-md;
 
                 Text {
                     text: "Vites:";
-                    color: Theme.text-dim;
-                    font-size: Theme.font-sm;
+                    color: AppTheme.text-secondary;
+                    font-size: AppTheme.font-sm;
                     vertical-alignment: center;
                 }
 
                 Text {
                     text: "V\{AppState.gear}";
-                    color: Theme.accent-yellow;
-                    font-size: Theme.font-lg;
+                    color: AppTheme.warning;
+                    font-size: AppTheme.font-lg;
+                    font-weight: 700;
                     vertical-alignment: center;
                 }
 
                 Rectangle { horizontal-stretch: 1; }
 
                 // Motor durumu
-                Rectangle {
-                    width: 8px; height: 8px;
-                    border-radius: 4px;
-                    background: AppState.motor-running ? Theme.accent-green : Theme.text-disabled;
-                    animate background { duration: 200ms; }
+                TStatusDot {
+                    status: AppState.motor-running ? StatusLevel.online : StatusLevel.idle;
                 }
 
                 Text {
                     text: AppState.motor-running ? "Çalışıyor" : "Durdu";
-                    color: AppState.motor-running ? Theme.accent-green : Theme.text-disabled;
-                    font-size: Theme.font-sm;
+                    color: AppState.motor-running ? AppTheme.success : AppTheme.text-tertiary;
+                    font-size: AppTheme.font-sm;
                     vertical-alignment: center;
                 }
             }

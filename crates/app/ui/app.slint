@@ -1,5 +1,20 @@
+import "./assets/fonts/Saira-Regular.ttf";
+import "./assets/fonts/Saira-Medium.ttf";
+import "./assets/fonts/Saira-SemiBold.ttf";
+import "./assets/fonts/SpaceMono-Bold.ttf";
+
 import { AppState }        from "state.slint";
-import { Theme }           from "theme.slint";
+import { AppTheme }        from "theme/theme.slint";
+import {
+    TCard,
+    TBadge,
+    TStatusDot,
+    TSeparator,
+    ThemeToggle,
+    BadgeVariant,
+    StatusLevel,
+}
+                           from "theme/components.slint";
 import { ConnectionPanel } from "components/connection_panel.slint";
 import { MotorControl }    from "components/motor_control.slint";
 import { JoystickPanel }   from "components/joystick_panel.slint";
@@ -12,17 +27,20 @@ export { AppState }
 
 export component AppWindow inherits Window {
     title: "Yörü-K Kontrolcü";
-    background: Theme.bg-dark;
-    min-width:  1100px;
-    min-height: 680px;
-    preferred-width:  1280px;
-    preferred-height: 800px;
+    default-font-family: "Saira";
+    default-font-weight: 600;
+    background: AppTheme.bg;
+    min-width: 1024px;
+    min-height: 860px;
+    preferred-width: 1280px;
+    preferred-height: 960px;
 
     // ── Rust'a callback'ler ──────────────────────────────
     callback connect-serial(string, int);
     callback connect-tcp(string, int);
     callback disconnect();
     callback refresh-ports();
+    callback validate-host(string);
     callback send-start();
     callback send-stop();
     callback send-light(bool);
@@ -42,6 +60,7 @@ export component AppWindow inherits Window {
     callback map-zoom-changed(int);
     callback map-zoom-in(length, length);
     callback map-zoom-out(length, length);
+    callback show-about();
 
     // Rust → Slint: harita viewport'unu ayarla (zoom değiştiğinde)
     public function set-map-viewport(ox: length, oy: length, w: length, h: length) {
@@ -52,33 +71,75 @@ export component AppWindow inherits Window {
     out property <length> map-visible-width:  map-view.visible-width;
     out property <length> map-visible-height: map-view.visible-height;
 
-    // Dark tema zorla — tüm native widgetları (Button, ComboBox, SpinBox vb.) etkiler
-    init => { Palette.color-scheme = ColorScheme.dark; }
+    // Dark tema zorla
+    init => {
+        Palette.color-scheme = ColorScheme.dark;
+    }
 
-    // Yardım dialog görünürlüğü
+    // Dialog görünürlükleri
     property <bool> help-visible: false;
+    // in property <image> app_icon: @image-url("./assets/Yörü-K-1.svg");
 
-    // ── MenuBar ──────────────────────────────────────────
+    icon: @image-url("./assets/Yörü-K-1.svg");
+
+    // ── MenuBar (macOS: sistem menü çubuğu) ─────────────
     MenuBar {
         Menu {
             title: "Bağlantı";
             MenuItem {
                 title: "Bağlantıyı Kes";
-                activated => { root.disconnect(); }
+                activated => {
+                    root.disconnect();
+                }
             }
         }
+
         Menu {
-            title: "Motor";
-            MenuItem { title: "Başlat"; activated => { root.send-start(); } }
-            MenuItem { title: "Durdur"; activated => { root.send-stop(); } }
-            MenuItem { title: "Işık";   activated => { root.send-light(!AppState.light-on); } }
-            MenuItem { title: "Fren";   activated => { root.send-brake(!AppState.brake-on); } }
+            title: "Görünüm";
+            MenuItem {
+                title: "Kamera";
+                activated => {
+                    AppState.active-tab = 0;
+                }
+            }
+
+            MenuItem {
+                title: "Harita";
+                activated => {
+                    AppState.active-tab = 1;
+                }
+            }
+
+            MenuSeparator { }
+
+            MenuItem {
+                title: "Tema Değiştir";
+                activated => {
+                    if (AppTheme.dark) {
+                        Palette.color-scheme = ColorScheme.light;
+                    } else {
+                        Palette.color-scheme = ColorScheme.dark;
+                    }
+                }
+            }
         }
+
         Menu {
             title: "Yardım";
             MenuItem {
                 title: "Klavye Kısayolları";
-                activated => { root.help-visible = !root.help-visible; }
+                activated => {
+                    root.help-visible = !root.help-visible;
+                }
+            }
+
+            MenuSeparator { }
+
+            MenuItem {
+                title: "Hakkında";
+                activated => {
+                    root.show-about();
+                }
             }
         }
     }
@@ -88,25 +149,73 @@ export component AppWindow inherits Window {
 
     key-handler := FocusScope {
         key-pressed(e) => {
-            if (e.text == " ") { root.send-stop(); return accept; }
-            if (e.text == "1") { root.set-gear(1); return accept; }
-            if (e.text == "2") { root.set-gear(2); return accept; }
-            if (e.text == "3") { root.set-gear(3); return accept; }
-            if (e.text == "l") { root.send-light(!AppState.light-on); return accept; }
-            if (e.text == "b") { root.send-brake(!AppState.brake-on); return accept; }
-            if (e.text == "m") { AppState.active-tab = 1; return accept; }
-            if (e.text == "c") { AppState.active-tab = 0; return accept; }
-            if (e.text == "w" || e.text == Key.UpArrow)    { return accept; }
-            if (e.text == "s" || e.text == Key.DownArrow)  { return accept; }
-            if (e.text == "a" || e.text == Key.LeftArrow)  { return accept; }
-            if (e.text == "d" || e.text == Key.RightArrow) { return accept; }
+            if (e.text == " ") {
+                root.send-stop();
+                return accept;
+            }
+            if (e.text == "1") {
+                root.set-gear(1);
+                return accept;
+            }
+            if (e.text == "2") {
+                root.set-gear(2);
+                return accept;
+            }
+            if (e.text == "3") {
+                root.set-gear(3);
+                return accept;
+            }
+            if (e.text == "l") {
+                root.send-light(!AppState.light-on);
+                return accept;
+            }
+            if (e.text == "b") {
+                root.send-brake(!AppState.brake-on);
+                return accept;
+            }
+            if (e.text == "m") {
+                AppState.active-tab = 1;
+                return accept;
+            }
+            if (e.text == "c") {
+                AppState.active-tab = 0;
+                return accept;
+            }
+            if (e.text == "t") {
+                if (AppTheme.dark) {
+                    Palette.color-scheme = ColorScheme.light;
+                } else {
+                    Palette.color-scheme = ColorScheme.dark;
+                }
+                return accept;
+            }
+            if (e.text == "w" || e.text == Key.UpArrow) {
+                return accept;
+            }
+            if (e.text == "s" || e.text == Key.DownArrow) {
+                return accept;
+            }
+            if (e.text == "a" || e.text == Key.LeftArrow) {
+                return accept;
+            }
+            if (e.text == "d" || e.text == Key.RightArrow) {
+                return accept;
+            }
             reject
         }
         key-released(e) => {
-            if (e.text == "w" || e.text == Key.UpArrow)    { return accept; }
-            if (e.text == "s" || e.text == Key.DownArrow)  { return accept; }
-            if (e.text == "a" || e.text == Key.LeftArrow)  { return accept; }
-            if (e.text == "d" || e.text == Key.RightArrow) { return accept; }
+            if (e.text == "w" || e.text == Key.UpArrow) {
+                return accept;
+            }
+            if (e.text == "s" || e.text == Key.DownArrow) {
+                return accept;
+            }
+            if (e.text == "a" || e.text == Key.LeftArrow) {
+                return accept;
+            }
+            if (e.text == "d" || e.text == Key.RightArrow) {
+                return accept;
+            }
             reject
         }
 
@@ -114,169 +223,218 @@ export component AppWindow inherits Window {
         VerticalLayout {
             spacing: 0px;
 
-            // ────────── Üst başlık çubuğu ───────────────
+            // ══════════ ÜST TOOLBAR ══════════════════════
             Rectangle {
-                height: 44px;
-                background: Theme.bg-card;
-                border-color: Theme.border;
+                height: 40px;
+                background: AppTheme.surface;
+
+                // Alt çizgi
+                Rectangle {
+                    y: parent.height - 1px;
+                    height: 1px;
+                    background: AppTheme.border-subtle;
+                }
 
                 HorizontalLayout {
-                    padding-left:  Theme.pad-md;
-                    padding-right: Theme.pad-md;
+                    padding-left: AppTheme.space-xl;
+                    padding-right: AppTheme.space-xl;
 
                     Text {
-                        text: "🤖 YÖRÜ-K";
-                        color: Theme.text-primary;
-                        font-size: Theme.font-lg;
+                        text: "YÖRÜ-K";
+                        color: AppTheme.text-primary;
+                        font-size: AppTheme.font-lg;
+                        font-weight: 700;
                         vertical-alignment: center;
                         letter-spacing: 2px;
                     }
 
-                    // ── Sekme butonları (başlık çubuğu ortası) ──
-                    Rectangle { horizontal-stretch: 1; }
-
-                    // Kamera sekmesi
                     Rectangle {
-                        width: 90px;
-                        background: AppState.active-tab == 0 ? Theme.accent : transparent;
-                        border-radius: Theme.radius;
-                        animate background { duration: 150ms; }
+                        horizontal-stretch: 1;
+                    }
+
+                    // ── Sekme butonları ──
+                    Rectangle {
+                        width: 96px;
+                        background: AppState.active-tab == 0 ? AppTheme.accent-subtle : transparent;
+                        border-radius: AppTheme.radius-md;
+                        animate background { duration: AppTheme.anim-fast; }
 
                         Text {
                             text: "📷 Kamera";
-                            color: AppState.active-tab == 0 ? Theme.text-primary : Theme.text-dim;
-                            font-size: Theme.font-sm;
+                            color: AppState.active-tab == 0 ? AppTheme.accent : AppTheme.text-secondary;
+                            font-size: AppTheme.font-sm;
+                            font-weight: AppState.active-tab == 0 ? 600 : 400;
                             horizontal-alignment: center;
                             vertical-alignment: center;
                         }
-                        TouchArea { clicked => { AppState.active-tab = 0; } }
+
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                AppState.active-tab = 0;
+                            }
+                        }
                     }
 
-                    Rectangle { width: 4px; }
-
-                    // Harita sekmesi
                     Rectangle {
-                        width: 90px;
-                        background: AppState.active-tab == 1 ? Theme.accent : transparent;
-                        border-radius: Theme.radius;
-                        animate background { duration: 150ms; }
+                        width: AppTheme.space-sm;
+                    }
+
+                    Rectangle {
+                        width: 96px;
+                        background: AppState.active-tab == 1 ? AppTheme.accent-subtle : transparent;
+                        border-radius: AppTheme.radius-md;
+                        animate background { duration: AppTheme.anim-fast; }
 
                         Text {
                             text: "🛰 Harita";
-                            color: AppState.active-tab == 1 ? Theme.text-primary : Theme.text-dim;
-                            font-size: Theme.font-sm;
+                            color: AppState.active-tab == 1 ? AppTheme.accent : AppTheme.text-secondary;
+                            font-size: AppTheme.font-sm;
+                            font-weight: AppState.active-tab == 1 ? 600 : 400;
                             horizontal-alignment: center;
                             vertical-alignment: center;
                         }
-                        TouchArea { clicked => { AppState.active-tab = 1; } }
+
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                AppState.active-tab = 1;
+                            }
+                        }
                     }
 
-                    Rectangle { horizontal-stretch: 1; }
-
-                    // ── Durum göstergeleri ──────────────────────
                     Rectangle {
-                        width: 8px; height: 8px;
-                        border-radius: 4px;
-                        background: AppState.connected ? Theme.accent-green : Theme.text-disabled;
-                        animate background { duration: 300ms; }
+                        horizontal-stretch: 1;
                     }
 
-                    Rectangle { width: Theme.pad-xs; }
-
-                    Text {
-                        text: AppState.status-text;
-                        color: Theme.text-dim;
-                        font-size: Theme.font-sm;
-                        vertical-alignment: center;
-                    }
-
-                    Rectangle { width: Theme.pad-md; }
-
-                    if (AppState.motor-running): Text {
-                        text: "● Motor";
-                        color: Theme.accent-green;
-                        font-size: Theme.font-sm;
-                        vertical-alignment: center;
-                    }
-
-                    Rectangle { width: Theme.pad-md; }
-
-                    if (AppState.gps-active && AppState.gps-point-count > 0): Text {
-                        text: "🛰 " +
-                              round(AppState.gps-lat * 10000) / 10000 + "°  " +
-                              round(AppState.gps-lon * 10000) / 10000 + "°";
-                        color: Theme.accent-green;
-                        font-size: Theme.font-sm;
-                        vertical-alignment: center;
-                    }
+                    // ── Tema geçiş düğmesi ──
+                    ThemeToggle { }
                 }
             }
 
-            // ────────── Ana içerik alanı ─────────────────
+            // ══════════ ANA İÇERİK ══════════════════════
             HorizontalLayout {
                 vertical-stretch: 1;
                 spacing: 0px;
 
-                // ══ SOL PANEL: Kamera / Harita ════════════
-                // Her iki tab da her zaman mevcut — `visible` ile seçim yapılır.
-                // MapView'ın set-viewport public function'ına Rust'tan erişim gerekiyor.
+                // ── SOL PANEL: Kamera / Harita ──
                 Rectangle {
                     horizontal-stretch: 1;
+                    background: AppTheme.bg;
 
                     CameraView {
                         visible: AppState.active-tab == 0;
                         width: parent.width;
                         height: parent.height;
-                        start-camera(i)             => { root.start-camera(i); }
-                        stop-camera()               => { root.stop-camera(); }
-                        refresh-cameras()           => { root.refresh-cameras(); }
-                        set-detection-enabled(v)    => { root.set-detection-enabled(v); }
+                        start-camera(i) => {
+                            root.start-camera(i);
+                        }
+                        stop-camera() => {
+                            root.stop-camera();
+                        }
+                        refresh-cameras() => {
+                            root.refresh-cameras();
+                        }
+                        set-detection-enabled(v) => {
+                            root.set-detection-enabled(v);
+                        }
                     }
 
                     map-view := MapView {
                         visible: AppState.active-tab == 1;
                         width: parent.width;
                         height: parent.height;
-                        enable-gps()              => { root.enable-gps(); }
-                        disable-gps()             => { root.disable-gps(); }
-                        map-flicked(ox, oy)       => { root.map-flicked(ox, oy); }
-                        map-zoom-changed(z)       => { root.map-zoom-changed(z); }
-                        map-zoom-in(mx, my)       => { root.map-zoom-in(mx, my); }
-                        map-zoom-out(mx, my)      => { root.map-zoom-out(mx, my); }
+                        enable-gps() => {
+                            root.enable-gps();
+                        }
+                        disable-gps() => {
+                            root.disable-gps();
+                        }
+                        map-flicked(ox, oy) => {
+                            root.map-flicked(ox, oy);
+                        }
+                        map-zoom-changed(z) => {
+                            root.map-zoom-changed(z);
+                        }
+                        map-zoom-in(mx, my) => {
+                            root.map-zoom-in(mx, my);
+                        }
+                        map-zoom-out(mx, my) => {
+                            root.map-zoom-out(mx, my);
+                        }
                     }
                 }
 
-                // ══ SAĞ PANEL: Kontrol ════════════════════
+                // ── SAĞ PANEL: Kontrol ──
                 Rectangle {
-                    width: Theme.panel-width;
-                    background: Theme.bg-panel;
-                    border-color: Theme.border;
-                    border-width: 1px;
+                    width: 320px;
+                    background: AppTheme.bg-secondary;
+
+                    // Sol kenarlık
+                    Rectangle {
+                        x: 0;
+                        width: 1px;
+                        height: parent.height;
+                        background: AppTheme.border-subtle;
+                    }
 
                     VerticalLayout {
-                        padding:  Theme.pad-sm;
-                        spacing:  Theme.pad-sm;
+                        padding: AppTheme.space-lg;
+                        spacing: AppTheme.space-lg;
 
                         ConnectionPanel {
-                            connect-serial(p, b) => { root.connect-serial(p, b); }
-                            connect-tcp(h, p)    => { root.connect-tcp(h, p); }
-                            disconnect()         => { root.disconnect(); }
-                            refresh-ports()      => { root.refresh-ports(); }
+                            connect-serial(p, b) => {
+                                root.connect-serial(p, b);
+                            }
+                            connect-tcp(h, p) => {
+                                root.connect-tcp(h, p);
+                            }
+                            disconnect() => {
+                                root.disconnect();
+                            }
+                            refresh-ports() => {
+                                root.refresh-ports();
+                            }
+                            validate-host(h) => {
+                                root.validate-host(h);
+                            }
                         }
+
+                        TSeparator { }
 
                         MotorControl {
-                            start()          => { root.send-start(); }
-                            stop()           => { root.send-stop(); }
-                            set-gear(g)      => { root.set-gear(g); }
-                            set-light(v)     => { root.send-light(v); }
-                            set-brake(v)     => { root.send-brake(v); }
-                            set-reverse-l(v) => { root.set-reverse-left(v); }
-                            set-reverse-r(v) => { root.set-reverse-right(v); }
+                            start() => {
+                                root.send-start();
+                            }
+                            stop() => {
+                                root.send-stop();
+                            }
+                            set-gear(g) => {
+                                root.set-gear(g);
+                            }
+                            set-light(v) => {
+                                root.send-light(v);
+                            }
+                            set-brake(v) => {
+                                root.send-brake(v);
+                            }
+                            set-reverse-l(v) => {
+                                root.set-reverse-left(v);
+                            }
+                            set-reverse-r(v) => {
+                                root.set-reverse-right(v);
+                            }
                         }
 
+                        TSeparator { }
+
                         JoystickPanel {
-                            moved(dx, dy, r) => { root.joystick-moved(dx, dy, r); }
-                            released()       => { root.joystick-released(); }
+                            moved(dx, dy, r) => {
+                                root.joystick-moved(dx, dy, r);
+                            }
+                            released() => {
+                                root.joystick-released();
+                            }
                         }
 
                         SpeedDisplay {
@@ -285,92 +443,337 @@ export component AppWindow inherits Window {
                     }
                 }
             }
+
+            // ══════════ ALT STATUS BAR ═══════════════════
+            Rectangle {
+                height: 26px;
+                background: AppTheme.surface;
+
+                // Üst çizgi
+                Rectangle {
+                    y: 0;
+                    height: 1px;
+                    background: AppTheme.border-subtle;
+                }
+
+                HorizontalLayout {
+                    padding-left: AppTheme.space-xl;
+                    padding-right: AppTheme.space-xl;
+                    padding-top: AppTheme.space-sm;
+                    padding-bottom: AppTheme.space-sm;
+                    spacing: AppTheme.space-xl;
+
+                    // Bağlantı durumu
+                    HorizontalLayout {
+                        spacing: AppTheme.space-md;
+                        alignment: center;
+
+                        Rectangle {
+                            width: 10px;
+                            height: 10px;
+                            border-radius: 5px;
+                            background: AppState.connected ? AppTheme.sensor-online : AppTheme.sensor-offline;
+                            animate background { duration: AppTheme.anim-normal; }
+                        }
+
+                        Text {
+                            text: AppState.connected ? (AppState.is-serial ? "Serial" : "TCP/IP") + " — Bağlı" : "Bağlantı yok";
+                            color: AppState.connected ? AppTheme.success-text : AppTheme.text-tertiary;
+                            font-size: AppTheme.font-xs;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    // Ayırıcı
+                    Rectangle {
+                        width: 1px;
+                        background: AppTheme.border-subtle;
+                    }
+
+                    // Motor durumu
+                    HorizontalLayout {
+                        spacing: AppTheme.space-sm;
+                        alignment: center;
+
+                        Rectangle {
+                            width: 10px;
+                            height: 10px;
+                            border-radius: 5px;
+                            background: AppState.motor-running ? AppTheme.motor-running : AppTheme.motor-stopped;
+                            animate background { duration: AppTheme.anim-normal; }
+                        }
+
+                        Text {
+                            text: AppState.motor-running ? "Motor Çalışıyor" : "Motor Durdu";
+                            color: AppState.motor-running ? AppTheme.success-text : AppTheme.text-tertiary;
+                            font-size: AppTheme.font-xs;
+                            vertical-alignment: center;
+                        }
+
+                        if (AppState.motor-running): Text {
+                            text: "V\{AppState.gear}";
+                            color: AppTheme.warning-text;
+                            font-size: AppTheme.font-xs;
+                            font-weight: 600;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    // Ayırıcı
+                    Rectangle {
+                        width: 1px;
+                        background: AppTheme.border-subtle;
+                    }
+
+                    // Periferal durumu
+                    if (AppState.light-on): HorizontalLayout {
+                        spacing: AppTheme.space-sm;
+                        alignment: center;
+                        Rectangle {
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 4px;
+                            background: AppTheme.warning;
+                        }
+
+                        Text {
+                            text: "Işık";
+                            color: AppTheme.warning-text;
+                            font-size: AppTheme.font-xs;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    if (AppState.brake-on): HorizontalLayout {
+                        spacing: AppTheme.space-sm;
+                        alignment: center;
+                        Rectangle {
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 4px;
+                            background: AppTheme.error;
+                        }
+
+                        Text {
+                            text: "Fren";
+                            color: AppTheme.error-text;
+                            font-size: AppTheme.font-xs;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    // GPS durumu
+                    if (AppState.gps-active): HorizontalLayout {
+                        spacing: AppTheme.space-sm;
+                        alignment: center;
+
+                        Rectangle {
+                            width: 8px;
+                            height: 8px;
+                            border-radius: 4px;
+                            background: AppState.gps-point-count > 0 ? AppTheme.sensor-online : AppTheme.sensor-warning;
+                            animate background { duration: AppTheme.anim-normal; }
+                        }
+
+                        Text {
+                            text: AppState.gps-point-count > 0 ? round(AppState.gps-lat * 10000) / 10000 + "°  " + round(AppState.gps-lon * 10000) / 10000 + "°" : "GPS bekliyor...";
+                            color: AppState.gps-point-count > 0 ? AppTheme.success-text : AppTheme.warning-text;
+                            font-size: AppTheme.font-xs;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    // Sağa itmek için boşluk
+                    Rectangle {
+                        horizontal-stretch: 1;
+                    }
+
+                    // Kamera FPS (sağda)
+                    if (AppState.camera-running): Text {
+                        text: "\{AppState.camera-fps} FPS";
+                        color: AppState.camera-fps >= 20 ? AppTheme.success-text : AppTheme.warning-text;
+                        font-size: AppTheme.font-xs;
+                        font-weight: 500;
+                        vertical-alignment: center;
+                    }
+
+                    // Detection sayısı
+                    if (AppState.detection-enabled && AppState.camera-running): Text {
+                        text: "\{AppState.detection-count} nesne";
+                        color: AppTheme.info-text;
+                        font-size: AppTheme.font-xs;
+                        font-weight: 500;
+                        vertical-alignment: center;
+                    }
+
+                    // Durum mesajı
+                    Text {
+                        text: AppState.status-text;
+                        color: AppTheme.text-tertiary;
+                        font-size: AppTheme.font-xs;
+                        vertical-alignment: center;
+                    }
+                }
+            }
         }
     }
 
     // ── Yardım dialog overlay ────────────────────────────
-    // FocusScope dışında, Window'un direkt child'ı — her zaman üstte
     if (help-visible): Rectangle {
-        background: #00000066;
-        x: 0; y: 0;
+        background: AppTheme.scrim;
+        x: 0;
+        y: 0;
         width: root.width;
         height: root.height;
 
         Rectangle {
-            width: 340px;
+            width: 360px;
             x: (root.width - self.width) / 2;
             y: (root.height - self.height) / 2;
-            background: Theme.bg-card;
-            border-color: Theme.border;
+            background: AppTheme.surface-raised;
+            border-color: AppTheme.border-default;
             border-width: 1px;
-            border-radius: Theme.radius;
-            drop-shadow-blur: 20px;
-            drop-shadow-color: #000000aa;
+            border-radius: AppTheme.radius-xl;
+            drop-shadow-blur: 24px;
+            drop-shadow-color: AppTheme.shadow;
 
             VerticalLayout {
-                padding: Theme.pad-md;
-                spacing: Theme.pad-sm;
+                padding: AppTheme.space-xl;
+                spacing: AppTheme.space-lg;
 
                 HorizontalLayout {
                     Text {
                         text: "Klavye Kısayolları";
-                        color: Theme.text-primary;
-                        font-size: Theme.font-lg;
+                        color: AppTheme.text-primary;
+                        font-size: AppTheme.font-lg;
+                        font-weight: 600;
                         vertical-alignment: center;
                         horizontal-stretch: 1;
                     }
+
                     Rectangle {
-                        width: 24px; height: 24px;
-                        border-radius: 12px;
-                        background: Theme.bg-panel;
+                        width: 28px;
+                        height: 28px;
+                        border-radius: AppTheme.radius-full;
+                        background: AppTheme.control-bg-hover;
                         Text {
                             text: "✕";
-                            color: Theme.text-dim;
-                            font-size: Theme.font-sm;
+                            color: AppTheme.text-secondary;
+                            font-size: AppTheme.font-sm;
                             horizontal-alignment: center;
                             vertical-alignment: center;
                         }
-                        TouchArea { clicked => { root.help-visible = false; } }
+
+                        TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                root.help-visible = false;
+                            }
+                        }
                     }
                 }
 
-                Rectangle { height: 1px; background: Theme.border; }
+                TSeparator { }
 
                 for row in [
-                    ["W / ↑",     "İleri"],
-                    ["S / ↓",     "Geri"],
-                    ["A / ←",     "Sol dönüş"],
-                    ["D / →",     "Sağ dönüş"],
-                    ["Space",     "Acil durdurma"],
+                    ["Space", "Acil durdurma"],
                     ["1 / 2 / 3", "Vites seç"],
-                    ["L",         "Işık aç/kapat"],
-                    ["B",         "Fren aç/kapat"],
-                    ["C",         "Kamera sekmesi"],
-                    ["M",         "Harita sekmesi"],
+                    ["L", "Işık aç/kapat"],
+                    ["B", "Fren aç/kapat"],
+                    ["C", "Kamera sekmesi"],
+                    ["M", "Harita sekmesi"],
+                    ["T", "Tema değiştir"],
                 ]: HorizontalLayout {
-                    spacing: Theme.pad-sm;
+                    spacing: AppTheme.space-md;
                     Rectangle {
-                        width: 90px; height: 22px;
-                        background: Theme.bg-panel;
-                        border-radius: 3px;
+                        width: 90px;
+                        height: 24px;
+                        background: AppTheme.surface-sunken;
+                        border-radius: AppTheme.radius-sm;
                         Text {
                             text: row[0];
-                            color: Theme.accent-yellow;
-                            font-size: Theme.font-sm;
+                            color: AppTheme.accent;
+                            font-size: AppTheme.font-sm;
+                            font-weight: 500;
                             horizontal-alignment: center;
                             vertical-alignment: center;
                         }
                     }
+
                     Text {
                         text: row[1];
-                        color: Theme.text-dim;
-                        font-size: Theme.font-sm;
+                        color: AppTheme.text-secondary;
+                        font-size: AppTheme.font-sm;
                         vertical-alignment: center;
                     }
                 }
             }
         }
 
-        TouchArea { clicked => { root.help-visible = false; } }
+        TouchArea {
+            clicked => {
+                root.help-visible = false;
+            }
+        }
+    }
+}
+
+// ── Hakkında Penceresi (ayrı Window) ───────────────
+export component AboutWindow inherits Window {
+    title: "Hakkında — Yörü-K";
+    default-font-family: "Saira";
+    default-font-weight: 600;
+    background: AppTheme.bg;
+    icon: @image-url("./assets/Yörü-K-1.svg");
+    width: 380px;
+    height: 420px;
+
+    VerticalLayout {
+        padding: AppTheme.space-xl;
+        spacing: AppTheme.space-md;
+        alignment: center;
+
+        HorizontalLayout {
+            alignment: center;
+            Image {
+                source: @image-url("./assets/Yörü-K-1.svg");
+                width: 96px;
+                height: 96px;
+                horizontal-alignment: center;
+            }
+        }
+
+        Text {
+            text: "Yörü-K İKA Kontrol Sistemi";
+            color: AppTheme.text-primary;
+            font-size: AppTheme.font-xl;
+            font-weight: 700;
+            horizontal-alignment: center;
+        }
+
+        Text {
+            text: "v0.1.0";
+            color: AppTheme.text-tertiary;
+            font-size: AppTheme.font-sm;
+            horizontal-alignment: center;
+        }
+
+        TSeparator { }
+
+        Text {
+            text: "Yörü-K diferansiyel sürüşlü İKA kontrol yazılımı";
+            color: AppTheme.text-secondary;
+            font-size: AppTheme.font-lg;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
+
+        Text {
+            text: "Rust + Slint + ONNX Runtime kullanarak Toroslar Atatürk MTAL Yörü-K Teknoloji Takımı tarafından üretilmiştir.";
+            color: AppTheme.text-tertiary;
+            font-size: AppTheme.font-md;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+        }
     }
 }

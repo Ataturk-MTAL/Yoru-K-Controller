@@ -1,6 +1,12 @@
 /// Joystick ölü bölgesi (piksel cinsinden)
 const DEAD_ZONE_PX: f32 = 15.0;
 
+/// Eksen snap toleransı (normalize ölçek, 0-100)
+/// Kılavuz çizginin her iki yanında bu kadar sapma sıfırlanır.
+/// Düz ileri/geri: |norm_x| < 8 → turn = 0 → left == right
+/// Saf dönüş:     |norm_y| < 8 → base = 0 → yerinde dönüş
+const AXIS_SNAP_THRESHOLD: f32 = 8.0;
+
 /// Joystick giriş değerleri
 #[derive(Debug, Clone, Copy)]
 pub struct JoystickInput {
@@ -32,6 +38,10 @@ pub fn calculate(input: &JoystickInput) -> MotorSpeeds {
 
     let norm_x = (input.dx / input.max_radius).clamp(-1.0, 1.0) * 100.0;
     let norm_y = (input.dy / input.max_radius).clamp(-1.0, 1.0) * 100.0;
+
+    // Eksen snap: kılavuz çizgi tolerans bandı
+    let norm_x = if norm_x.abs() < AXIS_SNAP_THRESHOLD { 0.0 } else { norm_x };
+    let norm_y = if norm_y.abs() < AXIS_SNAP_THRESHOLD { 0.0 } else { norm_y };
 
     let base = norm_y;
     let turn = norm_x * 0.5;
@@ -91,5 +101,29 @@ mod tests {
         let s = calculate(&input);
         assert!(s.left  <= 100 && s.left  >= -100);
         assert!(s.right <= 100 && s.right >= -100);
+    }
+
+    #[test]
+    fn test_axis_snap_forward() {
+        // Düz ileri + küçük yatay sapma → snap → left == right
+        let input = JoystickInput { dx: 5.0, dy: 80.0, max_radius: 100.0 };
+        let s = calculate(&input);
+        assert_eq!(s.left, s.right, "Eksen snap: düz ileri'de left == right olmalı");
+    }
+
+    #[test]
+    fn test_axis_snap_pure_turn() {
+        // Saf sağa dönüş + küçük dikey sapma → snap → base = 0
+        let input = JoystickInput { dx: 80.0, dy: 5.0, max_radius: 100.0 };
+        let s = calculate(&input);
+        assert_eq!(s.left, -s.right, "Eksen snap: saf dönüşte left == -right olmalı");
+    }
+
+    #[test]
+    fn test_axis_snap_diagonal_no_snap() {
+        // Köşegen hareket — snap eşiği üstünde → normal diferansiyel
+        let input = JoystickInput { dx: 50.0, dy: 50.0, max_radius: 100.0 };
+        let s = calculate(&input);
+        assert_ne!(s.left, s.right, "Köşegen harekette left != right olmalı");
     }
 }

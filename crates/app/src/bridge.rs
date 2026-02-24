@@ -8,6 +8,8 @@ use std::{
     time::{Duration, Instant},
 };
 
+use tracing::{info, debug};
+
 use slint::Global;
 
 use control::joystick::{JoystickInput, MotorSpeeds};
@@ -72,6 +74,7 @@ pub fn run_bridge(
                         Err(_) => continue, // timeout → döngü başına dön
                     };
 
+                    debug!(event = ?event, "Robot event alındı");
                     match &event {
                         RobotEvent::Packet(RobotResponse::Gps { lat, lon }) => {
                             let (lat, lon) = (*lat, *lon);
@@ -295,6 +298,16 @@ pub fn run_periodic_send(state: Arc<SharedState>) {
 
                 if diff_l > 2 || diff_r > 2 || gear != prev_gear {
                     let pkt = speed_packet(speeds.left, speeds.right, gear, rev_l, rev_r);
+                    info!(
+                        cmd = "HIZ_PKT",
+                        left = speeds.left,
+                        right = speeds.right,
+                        gear,
+                        rev_l,
+                        rev_r,
+                        pkt = ?pkt,
+                        "Hız paketi gönderiliyor"
+                    );
                     state.connection.lock().unwrap().send(pkt);
 
                     prev_left  = speeds.left;
@@ -306,9 +319,21 @@ pub fn run_periodic_send(state: Arc<SharedState>) {
         .expect("periodic-send thread başlatılamadı");
 }
 
-/// Joystick girdisinden motor hızlarını günceller
+/// Joystick girdisinden motor hızlarını günceller.
+/// Motor çalışmıyorsa hız güncellenmez — gereksiz veri gönderilmesini engeller.
 pub fn update_joystick_speeds(state: &SharedState, dx: f32, dy: f32, max_r: f32) {
+    if !state.motor_running.load(Ordering::Relaxed) {
+        return;
+    }
     let s = joystick_calculate(&JoystickInput { dx, dy, max_radius: max_r });
+    debug!(
+        dx = format!("{dx:.1}"),
+        dy = format!("{dy:.1}"),
+        max_r = format!("{max_r:.1}"),
+        left = s.left,
+        right = s.right,
+        "Joystick → hız hesaplandı"
+    );
     *state.speeds.lock().unwrap() = s;
 }
 

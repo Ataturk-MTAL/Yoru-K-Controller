@@ -1,0 +1,450 @@
+// ============================================================================
+//  Themed Components — AppTheme'e dayalı hazır bileşenler
+// ============================================================================
+
+import { Palette } from "std-widgets.slint";
+import { AppTheme } from "theme.slint";
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  ThemeToggle — Dark/Light geçiş düğmesi
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+export component ThemeToggle inherits Rectangle {
+    width: 52px;
+    height: 28px;
+    border-radius: 14px;
+    background: AppTheme.dark ? #2a2f44 : #d8dae0;
+    clip: true;
+
+    animate background { duration: AppTheme.anim-normal; }
+
+    // Track
+    knob := Rectangle {
+        x: AppTheme.dark ? parent.width - self.width - 3px : 3px;
+        y: (parent.height - self.height) / 2;
+        width: 22px;
+        height: 22px;
+        border-radius: 11px;
+        background: AppTheme.dark ? #5b8af5 : #ffffff;
+        drop-shadow-blur: 2px;
+        drop-shadow-color: AppTheme.shadow;
+
+        animate x { duration: AppTheme.anim-normal; easing: ease-in-out; }
+        animate background { duration: AppTheme.anim-normal; }
+
+        // İkon
+        Text {
+            text: AppTheme.dark ? "🌙" : "☀️";
+            font-size: 11px;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+    }
+
+    TouchArea {
+        clicked => {
+            if AppTheme.dark {
+                Palette.color-scheme = ColorScheme.light;
+            } else {
+                Palette.color-scheme = ColorScheme.dark;
+            }
+        }
+        mouse-cursor: pointer;
+    }
+}
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  TCard — Temel kart bileşeni
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+export component TCard inherits Rectangle {
+    in property <string> title;
+    in property <bool> elevated: false;
+
+    background: AppTheme.surface;
+    border-radius: AppTheme.radius-lg;
+    border-width: elevated ? 0px : 1px;
+    border-color: AppTheme.border-subtle;
+    drop-shadow-blur: elevated ? 12px : 0px;
+    drop-shadow-color: elevated ? AppTheme.shadow : transparent;
+    clip: true;
+
+    animate background { duration: AppTheme.anim-normal; }
+    animate border-color { duration: AppTheme.anim-normal; }
+
+    VerticalLayout {
+        padding: AppTheme.space-xl;
+        spacing: AppTheme.space-lg;
+
+        if title != "" : Text {
+            text: root.title;
+            color: AppTheme.text-primary;
+            font-size: AppTheme.font-lg;
+            font-weight: 600;
+        }
+
+        @children
+    }
+}
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  TButton — Tema uyumlu buton (primary, secondary, danger, ghost)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+export enum ButtonVariant { primary, secondary, danger, ghost }
+
+export component TButton inherits Rectangle {
+    in property <string> label: "Button";
+    in property <ButtonVariant> variant: ButtonVariant.primary;
+    in property <bool> enabled: true;
+    callback clicked;
+
+    height: 36px;
+    min-width: 80px;
+    border-radius: AppTheme.radius-md;
+    opacity: enabled ? 1.0 : 0.45;
+
+    // Variant bazlı renk hesaplama
+    property <brush> base-bg:
+        variant == ButtonVariant.primary  ? AppTheme.accent :
+        variant == ButtonVariant.danger   ? AppTheme.error :
+        variant == ButtonVariant.ghost    ? transparent :
+        /* secondary */                     AppTheme.control-bg;
+
+    property <brush> base-fg:
+        variant == ButtonVariant.primary  ? AppTheme.accent-text :
+        variant == ButtonVariant.danger   ? #ffffff :
+        variant == ButtonVariant.ghost    ? AppTheme.accent :
+        /* secondary */                     AppTheme.control-fg;
+
+    property <brush> hover-bg:
+        variant == ButtonVariant.primary  ? AppTheme.accent-hover :
+        variant == ButtonVariant.danger   ? AppTheme.error-hover :
+        variant == ButtonVariant.ghost    ? AppTheme.accent-subtle :
+        /* secondary */                     AppTheme.control-bg-hover;
+
+    property <brush> pressed-bg:
+        variant == ButtonVariant.primary  ? AppTheme.accent-pressed :
+        variant == ButtonVariant.danger   ? AppTheme.error.darker(30%) :
+        variant == ButtonVariant.ghost    ? AppTheme.accent-subtle :
+        /* secondary */                     AppTheme.control-bg-pressed;
+
+    background: base-bg;
+    border-width: variant == ButtonVariant.secondary ? 1px : 0px;
+    border-color: AppTheme.border-default;
+
+    states [
+        pressed when ta.pressed && enabled : {
+            background: pressed-bg;
+        }
+        hovered when ta.has-hover && enabled : {
+            background: hover-bg;
+        }
+    ]
+
+    animate background { duration: AppTheme.anim-fast; }
+
+    HorizontalLayout {
+        padding-left: AppTheme.space-xl;
+        padding-right: AppTheme.space-xl;
+        alignment: center;
+
+        Text {
+            text: root.label;
+            color: root.base-fg;
+            font-size: AppTheme.font-md;
+            font-weight: 500;
+            vertical-alignment: center;
+            horizontal-alignment: center;
+        }
+    }
+
+    ta := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: root.enabled ? pointer : default;
+        clicked => { root.clicked(); }
+    }
+}
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  TBadge — Durum etiketi (status badge)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+export enum BadgeVariant { success, warning, error, info, neutral }
+
+export component TBadge inherits Rectangle {
+    in property <string> label;
+    in property <BadgeVariant> variant: BadgeVariant.neutral;
+
+    height: 22px;
+    border-radius: AppTheme.radius-full;
+
+    background:
+        variant == BadgeVariant.success ? AppTheme.success-subtle :
+        variant == BadgeVariant.warning ? AppTheme.warning-subtle :
+        variant == BadgeVariant.error   ? AppTheme.error-subtle :
+        variant == BadgeVariant.info    ? AppTheme.info-subtle :
+        /* neutral */                     AppTheme.surface-overlay;
+
+    property <brush> text-color:
+        variant == BadgeVariant.success ? AppTheme.success-text :
+        variant == BadgeVariant.warning ? AppTheme.warning-text :
+        variant == BadgeVariant.error   ? AppTheme.error-text :
+        variant == BadgeVariant.info    ? AppTheme.info-text :
+        /* neutral */                     AppTheme.text-secondary;
+
+    animate background { duration: AppTheme.anim-normal; }
+
+    HorizontalLayout {
+        padding-left: AppTheme.space-md;
+        padding-right: AppTheme.space-md;
+        spacing: AppTheme.space-sm;
+        alignment: center;
+
+        // Nokta göstergesi
+        Rectangle {
+            width: 6px;
+            height: 6px;
+            border-radius: 3px;
+            background:
+                variant == BadgeVariant.success ? AppTheme.success :
+                variant == BadgeVariant.warning ? AppTheme.warning :
+                variant == BadgeVariant.error   ? AppTheme.error :
+                variant == BadgeVariant.info    ? AppTheme.info :
+                /* neutral */                     AppTheme.text-tertiary;
+        }
+
+        Text {
+            text: root.label;
+            color: root.text-color;
+            font-size: AppTheme.font-xs;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+}
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  TInput — Tema uyumlu text input
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+export component TInput inherits Rectangle {
+    in property <string> placeholder: "";
+    in-out property <string> text;
+    in property <bool> enabled: true;
+    in property <bool> has-error: false;
+    callback accepted(string);
+    callback edited(string);
+
+    height: 36px;
+    border-radius: AppTheme.radius-md;
+    background: AppTheme.control-bg;
+    border-width: 1px;
+    border-color:
+        has-error  ? AppTheme.error :
+        input.has-focus ? AppTheme.border-focus :
+                       AppTheme.border-default;
+
+    animate border-color { duration: AppTheme.anim-fast; }
+    animate background { duration: AppTheme.anim-normal; }
+
+    HorizontalLayout {
+        padding-left: AppTheme.space-lg;
+        padding-right: AppTheme.space-lg;
+
+        input := TextInput {
+            text <=> root.text;
+            enabled: root.enabled;
+            color: AppTheme.text-primary;
+            font-size: AppTheme.font-md;
+            vertical-alignment: center;
+            accepted => { root.accepted(self.text); }
+            edited => { root.edited(self.text); }
+        }
+    }
+
+    // Placeholder
+    if text == "" && !input.has-focus : Text {
+        x: AppTheme.space-lg;
+        text: root.placeholder;
+        color: AppTheme.text-tertiary;
+        font-size: AppTheme.font-md;
+        vertical-alignment: center;
+    }
+}
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  TStatusDot — Canlı durum göstergesi (yanıp sönen nokta)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+export enum StatusLevel { online, warning, offline, idle }
+
+export component TStatusDot inherits Rectangle {
+    in property <StatusLevel> status: StatusLevel.idle;
+
+    width: 10px;
+    height: 10px;
+    border-radius: 5px;
+
+    background:
+        status == StatusLevel.online  ? AppTheme.sensor-online :
+        status == StatusLevel.warning ? AppTheme.sensor-warning :
+        status == StatusLevel.offline ? AppTheme.sensor-offline :
+        /* idle */                      AppTheme.motor-stopped;
+
+    // Çevresinde "pulse" halkası (online iken)
+    if status == StatusLevel.online : Rectangle {
+        x: (parent.width - self.width) / 2;
+        y: (parent.height - self.height) / 2;
+        width: parent.width + 6px;
+        height: parent.height + 6px;
+        border-radius: self.width / 2;
+        background: transparent;
+        border-width: 2px;
+        border-color: AppTheme.sensor-online.transparentize(60%);
+    }
+}
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  TSeparator — Yatay ayırıcı çizgi
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+export component TSeparator inherits Rectangle {
+    height: 1px;
+    background: AppTheme.border-subtle;
+    animate background { duration: AppTheme.anim-normal; }
+}
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  TMotorButton — Endüstriyel motor kontrol butonu
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+export component TMotorButton inherits Rectangle {
+    in-out property <bool> running;
+    in property <bool> enabled: true;
+    in property <bool> fault: false;
+    in property <string> motor-name: "Motor";
+    callback clicked;
+
+    height: 44px;
+    min-width: 140px;
+    border-radius: AppTheme.radius-md;
+    clip: true;
+
+    background:
+        fault   ? AppTheme.motor-fault :
+        !enabled ? AppTheme.control-bg-disabled :
+        running  ? AppTheme.motor-running :
+                   AppTheme.accent;
+
+    opacity: enabled ? 1.0 : 0.4;
+
+    states [
+        pressed when ta.pressed && enabled && !fault : {
+            background: running
+                ? AppTheme.motor-running.darker(20%)
+                : AppTheme.accent-pressed;
+        }
+        hovered when ta.has-hover && enabled && !fault : {
+            background: running
+                ? AppTheme.motor-running.darker(8%)
+                : AppTheme.accent-hover;
+        }
+    ]
+
+    animate background { duration: AppTheme.anim-fast; }
+    animate opacity { duration: AppTheme.anim-normal; }
+
+    HorizontalLayout {
+        padding-left: AppTheme.space-lg;
+        padding-right: AppTheme.space-lg;
+        spacing: AppTheme.space-md;
+        alignment: center;
+
+        Text {
+            text: fault ? "⚠" : running ? "■" : "▶";
+            color: white;
+            font-size: AppTheme.font-sm;
+            vertical-alignment: center;
+        }
+
+        Text {
+            text: fault ? "\{root.motor-name} ARIZA"
+                 : running ? "\{root.motor-name} DURDUR"
+                 : "\{root.motor-name} BAŞLAT";
+            color: white;
+            font-size: AppTheme.font-md;
+            font-weight: 600;
+            vertical-alignment: center;
+        }
+    }
+
+    ta := TouchArea {
+        enabled: root.enabled && !root.fault;
+        mouse-cursor: root.enabled && !root.fault ? pointer : default;
+        clicked => { root.clicked(); }
+    }
+}
+
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+//  TSensorValue — Sensör değer göstergesi (label + value + unit + status)
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+export component TSensorValue inherits Rectangle {
+    in property <string> label: "Sıcaklık";
+    in property <string> value: "--";
+    in property <string> unit: "°C";
+    in property <StatusLevel> status: StatusLevel.idle;
+
+    background: AppTheme.surface;
+    border-radius: AppTheme.radius-lg;
+    border-width: 1px;
+    border-color: AppTheme.border-subtle;
+    height: 80px;
+
+    animate background { duration: AppTheme.anim-normal; }
+
+    HorizontalLayout {
+        padding: AppTheme.space-xl;
+        alignment: space-between;
+
+        VerticalLayout {
+            spacing: AppTheme.space-sm;
+            alignment: center;
+
+            HorizontalLayout {
+                spacing: AppTheme.space-sm;
+                alignment: start;
+
+                TStatusDot { status: root.status; }
+                Text {
+                    text: root.label;
+                    color: AppTheme.text-secondary;
+                    font-size: AppTheme.font-sm;
+                    vertical-alignment: center;
+                }
+            }
+
+            HorizontalLayout {
+                spacing: AppTheme.space-xs;
+                alignment: start;
+
+                Text {
+                    text: root.value;
+                    color:
+                        status == StatusLevel.offline ? AppTheme.value-critical :
+                        status == StatusLevel.warning ? AppTheme.value-high :
+                                                        AppTheme.text-primary;
+                    font-size: AppTheme.font-2xl;
+                    font-weight: 700;
+                    vertical-alignment: bottom;
+                }
+                Text {
+                    text: root.unit;
+                    color: AppTheme.text-tertiary;
+                    font-size: AppTheme.font-md;
+                    vertical-alignment: bottom;
+                }
+            }
+        }
+    }
+}
