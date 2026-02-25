@@ -21,7 +21,7 @@ import { JoystickPanel }   from "components/joystick_panel.slint";
 import { SpeedDisplay }    from "components/speed_display.slint";
 import { CameraView }      from "components/camera_view.slint";
 import { MapView }         from "components/map_view.slint";
-import { Palette }         from "std-widgets.slint";
+import { Palette, StandardButton, Button } from "std-widgets.slint";
 
 export { AppState }
 
@@ -74,6 +74,7 @@ export component AppWindow inherits Window {
     // Dark tema zorla
     init => {
         Palette.color-scheme = ColorScheme.dark;
+        AppState.is-dark = true;
     }
 
     // Dialog görünürlükleri
@@ -117,8 +118,10 @@ export component AppWindow inherits Window {
                 activated => {
                     if (AppTheme.dark) {
                         Palette.color-scheme = ColorScheme.light;
+                        AppState.is-dark = false;
                     } else {
                         Palette.color-scheme = ColorScheme.dark;
+                        AppState.is-dark = true;
                     }
                 }
             }
@@ -184,8 +187,10 @@ export component AppWindow inherits Window {
             if (e.text == "t") {
                 if (AppTheme.dark) {
                     Palette.color-scheme = ColorScheme.light;
+                    AppState.is-dark = false;
                 } else {
                     Palette.color-scheme = ColorScheme.dark;
+                    AppState.is-dark = true;
                 }
                 return accept;
             }
@@ -718,15 +723,28 @@ export component AppWindow inherits Window {
     }
 }
 
-// ── Hakkında Penceresi (ayrı Window) ───────────────
+// ── Hakkında Penceresi ───────────────────────────────
 export component AboutWindow inherits Window {
     title: "Hakkında — Yörü-K";
     default-font-family: "Saira";
     default-font-weight: 600;
     background: AppTheme.bg;
     icon: @image-url("./assets/Yörü-K-1.svg");
+    always-on-top: true;
     width: 380px;
-    height: 420px;
+    height: 440px;
+
+    callback close-requested();
+
+    // Tema senkronizasyonu — Rust set_is_dark() çağrıldığında tetiklenir
+    in property <bool> is-dark: true;
+    changed is-dark => {
+        if (is-dark) {
+            Palette.color-scheme = ColorScheme.dark;
+        } else {
+            Palette.color-scheme = ColorScheme.light;
+        }
+    }
 
     VerticalLayout {
         padding: AppTheme.space-xl;
@@ -774,6 +792,13 @@ export component AboutWindow inherits Window {
             font-size: AppTheme.font-md;
             horizontal-alignment: center;
             wrap: word-wrap;
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        Button {
+            text: "Kapat";
+            clicked => { root.close-requested(); }
         }
     }
 }

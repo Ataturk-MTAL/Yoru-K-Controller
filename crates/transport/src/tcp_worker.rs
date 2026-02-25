@@ -21,6 +21,8 @@ pub fn spawn(
         let addr = format!("{host}:{port}");
         match TcpStream::connect(&addr).await {
             Ok(stream) => {
+                // Nagle algoritmasını devre dışı bırak — küçük paketler hemen gönderilsin
+                let _ = stream.set_nodelay(true);
                 let _ = event_tx.send(RobotEvent::Connected(addr.clone()));
                 let (mut rd, mut wr) = stream.into_split();
                 let mut rx_buf: Vec<u8> = Vec::new();
@@ -35,6 +37,14 @@ pub fn spawn(
                                     if let Err(e) = wr.write_all(&pkt).await {
                                         let _ = event_tx.send(RobotEvent::Error(
                                             format!("TCP yazma hatası: {e}")
+                                        ));
+                                        let _ = event_tx.send(RobotEvent::Disconnected);
+                                        return;
+                                    }
+                                    // Küçük paketlerin hemen gönderilmesi için flush
+                                    if let Err(e) = wr.flush().await {
+                                        let _ = event_tx.send(RobotEvent::Error(
+                                            format!("TCP flush hatası: {e}")
                                         ));
                                         let _ = event_tx.send(RobotEvent::Disconnected);
                                         return;

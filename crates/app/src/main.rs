@@ -4,6 +4,8 @@ mod bridge;
 mod map;
 
 use std::{
+    cell::RefCell,
+    rc::Rc,
     sync::{mpsc, Arc, Mutex, atomic::{AtomicBool, Ordering}},
     sync::mpsc::sync_channel,
     thread,
@@ -118,9 +120,47 @@ fn main() -> Result<()> {
         s.motor_running.store(false, Ordering::Relaxed);
     });
 
+    // AboutWindow referansı — ana pencere kapanırken de erişilebilir
+    let about_ref: Rc<RefCell<Option<AboutWindow>>> = Rc::new(RefCell::new(None));
+
+    let ui_weak_about = ui.as_weak();
+    let about_ref_show = about_ref.clone();
     ui.on_show_about(move || {
+        // Zaten açıksa tekrar oluşturma
+        if about_ref_show.borrow().is_some() { return; }
+
+        let Some(ui) = ui_weak_about.upgrade() else { return };
         let about = AboutWindow::new().unwrap();
+        about.set_is_dark(AppState::get(&ui).get_is_dark());
+
+        // "Kapat" butonu veya pencere kapatma → hide + referansı temizle
+        let about_ref_close = about_ref_show.clone();
+        let about_weak = about.as_weak();
+        about.on_close_requested(move || {
+            if let Some(a) = about_weak.upgrade() {
+                a.hide().unwrap();
+            }
+            about_ref_close.borrow_mut().take();
+        });
+
+        // Pencere X butonuyla kapatılırsa da referansı temizle
+        let about_ref_x = about_ref_show.clone();
+        about.window().on_close_requested(move || {
+            about_ref_x.borrow_mut().take();
+            slint::CloseRequestResponse::HideWindow
+        });
+
         about.show().unwrap();
+        *about_ref_show.borrow_mut() = Some(about);
+    });
+
+    // Ana pencere kapanırken AboutWindow'u da kapat
+    let about_ref_main = about_ref.clone();
+    ui.window().on_close_requested(move || {
+        if let Some(about) = about_ref_main.borrow_mut().take() {
+            let _ = about.hide();
+        }
+        slint::CloseRequestResponse::HideWindow
     });
 
     let ui_weak_validate = ui.as_weak();

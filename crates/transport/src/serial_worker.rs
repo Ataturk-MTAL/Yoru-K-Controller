@@ -35,7 +35,7 @@ pub fn spawn(
                         loop {
                             match pkt_rx.try_recv() {
                                 Ok(pkt) => {
-                                    if let Err(e) = port.write_all(&pkt) {
+                                    if let Err(e) = port.write_all(&pkt).and_then(|_| port.flush()) {
                                         let _ = event_tx.send(RobotEvent::Error(format!("Yazma hatası: {e}")));
                                         return;
                                     }

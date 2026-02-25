@@ -4,6 +4,7 @@
 
 import { Palette } from "std-widgets.slint";
 import { AppTheme } from "theme.slint";
+import { AppState } from "../state.slint";
 
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 //  ThemeToggle — Dark/Light geçiş düğmesi
@@ -44,8 +45,10 @@ export component ThemeToggle inherits Rectangle {
         clicked => {
             if AppTheme.dark {
                 Palette.color-scheme = ColorScheme.light;
+                AppState.is-dark = false;
             } else {
                 Palette.color-scheme = ColorScheme.dark;
+                AppState.is-dark = true;
             }
         }
         mouse-cursor: pointer;
