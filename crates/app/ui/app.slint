@@ -48,6 +48,7 @@ export component AppWindow inherits Window {
     callback set-gear(int);
     callback set-reverse-left(bool);
     callback set-reverse-right(bool);
+    callback set-send-interval(int);
     callback joystick-moved(float, float, float);
     callback joystick-released();
     callback start-camera(int);
@@ -61,6 +62,9 @@ export component AppWindow inherits Window {
     callback map-zoom-in(length, length);
     callback map-zoom-out(length, length);
     callback show-about();
+    callback show-shortcuts();
+    callback keyboard-key-down(string);
+    callback keyboard-key-up(string);
 
     // Rust → Slint: harita viewport'unu ayarla (zoom değiştiğinde)
     public function set-map-viewport(ox: length, oy: length, w: length, h: length) {
@@ -77,8 +81,6 @@ export component AppWindow inherits Window {
         AppState.is-dark = true;
     }
 
-    // Dialog görünürlükleri
-    property <bool> help-visible: false;
     // in property <image> app_icon: @image-url("./assets/Yörü-K-1.svg");
 
     icon: @image-url("./assets/Yörü-K-1.svg");
@@ -132,7 +134,7 @@ export component AppWindow inherits Window {
             MenuItem {
                 title: "Klavye Kısayolları";
                 activated => {
-                    root.help-visible = !root.help-visible;
+                    root.show-shortcuts();
                 }
             }
 
@@ -195,30 +197,38 @@ export component AppWindow inherits Window {
                 return accept;
             }
             if (e.text == "w" || e.text == Key.UpArrow) {
+                root.keyboard-key-down("w");
                 return accept;
             }
             if (e.text == "s" || e.text == Key.DownArrow) {
+                root.keyboard-key-down("s");
                 return accept;
             }
             if (e.text == "a" || e.text == Key.LeftArrow) {
+                root.keyboard-key-down("a");
                 return accept;
             }
             if (e.text == "d" || e.text == Key.RightArrow) {
+                root.keyboard-key-down("d");
                 return accept;
             }
             reject
         }
         key-released(e) => {
             if (e.text == "w" || e.text == Key.UpArrow) {
+                root.keyboard-key-up("w");
                 return accept;
             }
             if (e.text == "s" || e.text == Key.DownArrow) {
+                root.keyboard-key-up("s");
                 return accept;
             }
             if (e.text == "a" || e.text == Key.LeftArrow) {
+                root.keyboard-key-up("a");
                 return accept;
             }
             if (e.text == "d" || e.text == Key.RightArrow) {
+                root.keyboard-key-up("d");
                 return accept;
             }
             reject
@@ -429,6 +439,9 @@ export component AppWindow inherits Window {
                             set-reverse-r(v) => {
                                 root.set-reverse-right(v);
                             }
+                            set-send-interval(ms) => {
+                                root.set-send-interval(ms);
+                            }
                         }
 
                         TSeparator { }
@@ -623,104 +636,6 @@ export component AppWindow inherits Window {
         }
     }
 
-    // ── Yardım dialog overlay ────────────────────────────
-    if (help-visible): Rectangle {
-        background: AppTheme.scrim;
-        x: 0;
-        y: 0;
-        width: root.width;
-        height: root.height;
-
-        Rectangle {
-            width: 360px;
-            x: (root.width - self.width) / 2;
-            y: (root.height - self.height) / 2;
-            background: AppTheme.surface-raised;
-            border-color: AppTheme.border-default;
-            border-width: 1px;
-            border-radius: AppTheme.radius-xl;
-            drop-shadow-blur: 24px;
-            drop-shadow-color: AppTheme.shadow;
-
-            VerticalLayout {
-                padding: AppTheme.space-xl;
-                spacing: AppTheme.space-lg;
-
-                HorizontalLayout {
-                    Text {
-                        text: "Klavye Kısayolları";
-                        color: AppTheme.text-primary;
-                        font-size: AppTheme.font-lg;
-                        font-weight: 600;
-                        vertical-alignment: center;
-                        horizontal-stretch: 1;
-                    }
-
-                    Rectangle {
-                        width: 28px;
-                        height: 28px;
-                        border-radius: AppTheme.radius-full;
-                        background: AppTheme.control-bg-hover;
-                        Text {
-                            text: "✕";
-                            color: AppTheme.text-secondary;
-                            font-size: AppTheme.font-sm;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                        }
-
-                        TouchArea {
-                            mouse-cursor: pointer;
-                            clicked => {
-                                root.help-visible = false;
-                            }
-                        }
-                    }
-                }
-
-                TSeparator { }
-
-                for row in [
-                    ["Space", "Acil durdurma"],
-                    ["1 / 2 / 3", "Vites seç"],
-                    ["L", "Işık aç/kapat"],
-                    ["B", "Fren aç/kapat"],
-                    ["C", "Kamera sekmesi"],
-                    ["M", "Harita sekmesi"],
-                    ["T", "Tema değiştir"],
-                ]: HorizontalLayout {
-                    spacing: AppTheme.space-md;
-                    Rectangle {
-                        width: 90px;
-                        height: 24px;
-                        background: AppTheme.surface-sunken;
-                        border-radius: AppTheme.radius-sm;
-                        Text {
-                            text: row[0];
-                            color: AppTheme.accent;
-                            font-size: AppTheme.font-sm;
-                            font-weight: 500;
-                            horizontal-alignment: center;
-                            vertical-alignment: center;
-                        }
-                    }
-
-                    Text {
-                        text: row[1];
-                        color: AppTheme.text-secondary;
-                        font-size: AppTheme.font-sm;
-                        vertical-alignment: center;
-                    }
-                }
-            }
-        }
-
-        TouchArea {
-            clicked => {
-                root.help-visible = false;
-            }
-        }
-    }
 }
 
 // ── Hakkında Penceresi ───────────────────────────────
@@ -792,6 +707,84 @@ export component AboutWindow inherits Window {
             font-size: AppTheme.font-md;
             horizontal-alignment: center;
             wrap: word-wrap;
+        }
+
+        Rectangle { vertical-stretch: 1; }
+
+        Button {
+            text: "Kapat";
+            clicked => { root.close-requested(); }
+        }
+    }
+}
+
+// ── Klavye Kısayolları Penceresi ─────────────────────
+export component ShortcutsWindow inherits Window {
+    title: "Klavye Kısayolları — Yörü-K";
+    default-font-family: "Saira";
+    default-font-weight: 600;
+    background: AppTheme.bg;
+    icon: @image-url("./assets/Yörü-K-1.svg");
+    always-on-top: true;
+    width: 340px;
+    height: 400px;
+
+    callback close-requested();
+
+    in property <bool> is-dark: true;
+    changed is-dark => {
+        if (is-dark) {
+            Palette.color-scheme = ColorScheme.dark;
+        } else {
+            Palette.color-scheme = ColorScheme.light;
+        }
+    }
+
+    VerticalLayout {
+        padding: AppTheme.space-xl;
+        spacing: AppTheme.space-lg;
+
+        Text {
+            text: "Klavye Kısayolları";
+            color: AppTheme.text-primary;
+            font-size: AppTheme.font-lg;
+            font-weight: 700;
+            horizontal-alignment: center;
+        }
+
+        TSeparator { }
+
+        for row in [
+            ["Space", "Acil durdurma"],
+            ["1 / 2 / 3", "Vites seç"],
+            ["L", "Işık aç/kapat"],
+            ["B", "Fren aç/kapat"],
+            ["C", "Kamera sekmesi"],
+            ["M", "Harita sekmesi"],
+            ["T", "Tema değiştir"],
+        ]: HorizontalLayout {
+            spacing: AppTheme.space-md;
+            Rectangle {
+                width: 90px;
+                height: 28px;
+                background: AppTheme.surface-sunken;
+                border-radius: AppTheme.radius-sm;
+                Text {
+                    text: row[0];
+                    color: AppTheme.accent;
+                    font-size: AppTheme.font-sm;
+                    font-weight: 600;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+            }
+
+            Text {
+                text: row[1];
+                color: AppTheme.text-secondary;
+                font-size: AppTheme.font-md;
+                vertical-alignment: center;
+            }
         }
 
         Rectangle { vertical-stretch: 1; }

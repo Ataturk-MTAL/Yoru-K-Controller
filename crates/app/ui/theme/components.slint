@@ -331,7 +331,12 @@ export component TMotorButton inherits Rectangle {
     height: 44px;
     min-width: 140px;
     border-radius: AppTheme.radius-md;
+    border-width: 1px;
+    border-color: AppTheme.dark ? AppTheme.border-subtle : AppTheme.border-strong;
     clip: true;
+
+    property <brush> text-color:
+        AppTheme.dark ? #ffffff : AppTheme.text-primary;
 
     background:
         fault   ? AppTheme.motor-fault :
@@ -365,7 +370,7 @@ export component TMotorButton inherits Rectangle {
 
         Text {
             text: fault ? "⚠" : running ? "■" : "▶";
-            color: white;
+            color: root.text-color;
             font-size: AppTheme.font-sm;
             vertical-alignment: center;
         }
@@ -374,7 +379,7 @@ export component TMotorButton inherits Rectangle {
             text: fault ? "\{root.motor-name} ARIZA"
                  : running ? "\{root.motor-name} DURDUR"
                  : "\{root.motor-name} BAŞLAT";
-            color: white;
+            color: root.text-color;
             font-size: AppTheme.font-md;
             font-weight: 600;
             vertical-alignment: center;

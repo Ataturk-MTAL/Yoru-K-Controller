@@ -8,12 +8,13 @@ use std::{
     time::{Duration, Instant},
 };
 
-use tracing::{info, debug};
+use tracing::debug;
 
 use slint::Global;
 
 use control::joystick::{JoystickInput, MotorSpeeds};
 use control::joystick_calculate;
+use control::{KeyboardState, keyboard_calculate};
 use protocol::{speed_packet, RobotResponse};
 use transport::{ConnectionManager, RobotEvent};
 use vision::camera::{RgbaFrame, CameraEvent};
@@ -25,25 +26,29 @@ use crate::map::lat_lon_to_tile;
 
 /// Paylaşılan uygulama durumu (thread'ler arası)
 pub struct SharedState {
-    pub speeds:         Arc<Mutex<MotorSpeeds>>,
-    pub gear:           Arc<AtomicU8>,
-    pub motor_running:  Arc<AtomicBool>,
-    pub reverse_left:   Arc<AtomicBool>,
-    pub reverse_right:  Arc<AtomicBool>,
-    pub connection:     Arc<Mutex<ConnectionManager>>,
-    pub gps_track:      Arc<Mutex<Vec<(f32, f32)>>>,
+    pub speeds:            Arc<Mutex<MotorSpeeds>>,
+    pub gear:              Arc<AtomicU8>,
+    pub motor_running:     Arc<AtomicBool>,
+    pub reverse_left:      Arc<AtomicBool>,
+    pub reverse_right:     Arc<AtomicBool>,
+    pub send_interval_ms:  Arc<AtomicU8>,
+    pub connection:        Arc<Mutex<ConnectionManager>>,
+    pub gps_track:         Arc<Mutex<Vec<(f32, f32)>>>,
+    pub keyboard:          Arc<Mutex<KeyboardState>>,
 }
 
 impl SharedState {
     pub fn new(connection: ConnectionManager) -> Self {
         Self {
-            speeds:        Arc::new(Mutex::new(MotorSpeeds::default())),
-            gear:          Arc::new(AtomicU8::new(1)),
-            motor_running: Arc::new(AtomicBool::new(false)),
-            reverse_left:  Arc::new(AtomicBool::new(false)),
-            reverse_right: Arc::new(AtomicBool::new(false)),
-            connection:    Arc::new(Mutex::new(connection)),
-            gps_track:     Arc::new(Mutex::new(Vec::new())),
+            speeds:           Arc::new(Mutex::new(MotorSpeeds::default())),
+            gear:             Arc::new(AtomicU8::new(1)),
+            motor_running:    Arc::new(AtomicBool::new(false)),
+            reverse_left:     Arc::new(AtomicBool::new(false)),
+            reverse_right:    Arc::new(AtomicBool::new(false)),
+            send_interval_ms: Arc::new(AtomicU8::new(30)),
+            connection:       Arc::new(Mutex::new(connection)),
+            gps_track:        Arc::new(Mutex::new(Vec::new())),
+            keyboard:         Arc::new(Mutex::new(KeyboardState::default())),
         }
     }
 }
@@ -272,19 +277,35 @@ pub fn run_bridge(
         .expect("frame-bridge thread başlatılamadı");
 }
 
-/// Periyodik hız gönderim thread'i (50ms = 20Hz)
+/// Periyodik hız gönderim thread'i — aralık `send_interval_ms` ile belirlenir
+/// Motor çalışırken mevcut hızı HER DÖNGÜDE gönderir (ESP32 timeout'a düşmesin).
+/// Motor durdurulduğunda son bir (0,0) paketi gönderilir ve keyboard sıfırlanır.
 pub fn run_periodic_send(state: Arc<SharedState>) {
     thread::Builder::new()
         .name("periodic-send".into())
         .spawn(move || {
-            let mut prev_left:  i8 = 0;
-            let mut prev_right: i8 = 0;
-            let mut prev_gear:  u8 = 1;
+            let mut was_running = false;
 
             loop {
-                thread::sleep(Duration::from_millis(50));
+                let interval = state.send_interval_ms.load(Ordering::Relaxed) as u64;
+                thread::sleep(Duration::from_millis(interval.max(5)));
 
-                if !state.motor_running.load(Ordering::Relaxed) {
+                let running = state.motor_running.load(Ordering::Relaxed);
+
+                // Motor durdurulduğunda: son (0,0) paketi gönder, keyboard sıfırla
+                if was_running && !running {
+                    *state.speeds.lock().unwrap() = MotorSpeeds::default();
+                    *state.keyboard.lock().unwrap() = KeyboardState::default();
+                    let gear  = state.gear.load(Ordering::Relaxed);
+                    let rev_l = state.reverse_left.load(Ordering::Relaxed);
+                    let rev_r = state.reverse_right.load(Ordering::Relaxed);
+                    let pkt = speed_packet(0, 0, gear, rev_l, rev_r);
+                    state.connection.lock().unwrap().send(pkt);
+                    debug!(cmd = "HIZ_PKT", "Motor durdu → son (0,0) paketi gönderildi");
+                }
+                was_running = running;
+
+                if !running {
                     continue;
                 }
 
@@ -293,27 +314,15 @@ pub fn run_periodic_send(state: Arc<SharedState>) {
                 let rev_l  = state.reverse_left.load(Ordering::Relaxed);
                 let rev_r  = state.reverse_right.load(Ordering::Relaxed);
 
-                let diff_l = (speeds.left  - prev_left).abs();
-                let diff_r = (speeds.right - prev_right).abs();
-
-                if diff_l > 2 || diff_r > 2 || gear != prev_gear {
-                    let pkt = speed_packet(speeds.left, speeds.right, gear, rev_l, rev_r);
-                    info!(
-                        cmd = "HIZ_PKT",
-                        left = speeds.left,
-                        right = speeds.right,
-                        gear,
-                        rev_l,
-                        rev_r,
-                        pkt = ?pkt,
-                        "Hız paketi gönderiliyor"
-                    );
-                    state.connection.lock().unwrap().send(pkt);
-
-                    prev_left  = speeds.left;
-                    prev_right = speeds.right;
-                    prev_gear  = gear;
-                }
+                let pkt = speed_packet(speeds.left, speeds.right, gear, rev_l, rev_r);
+                debug!(
+                    cmd = "HIZ_PKT",
+                    left = speeds.left,
+                    right = speeds.right,
+                    gear,
+                    "Hız paketi gönderiliyor"
+                );
+                state.connection.lock().unwrap().send(pkt);
             }
         })
         .expect("periodic-send thread başlatılamadı");
@@ -333,6 +342,32 @@ pub fn update_joystick_speeds(state: &SharedState, dx: f32, dy: f32, max_r: f32)
         left = s.left,
         right = s.right,
         "Joystick → hız hesaplandı"
+    );
+    *state.speeds.lock().unwrap() = s;
+}
+
+/// Klavye tuş basma/bırakma olayını işler.
+/// KeyboardState güncellenir, hız hesaplanır ve `state.speeds`'e yazılır.
+pub fn update_keyboard(state: &SharedState, key: &str, pressed: bool) {
+    if !state.motor_running.load(Ordering::Relaxed) {
+        return;
+    }
+    {
+        let mut kb = state.keyboard.lock().unwrap();
+        match key {
+            "w" => kb.forward  = pressed,
+            "s" => kb.backward = pressed,
+            "a" => kb.left     = pressed,
+            "d" => kb.right    = pressed,
+            _   => return,
+        }
+    }
+    let kb = state.keyboard.lock().unwrap();
+    let s = keyboard_calculate(&kb);
+    debug!(
+        key, pressed,
+        left = s.left, right = s.right,
+        "Klavye → hız hesaplandı"
     );
     *state.speeds.lock().unwrap() = s;
 }

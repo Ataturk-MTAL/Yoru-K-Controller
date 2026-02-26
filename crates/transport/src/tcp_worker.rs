@@ -1,4 +1,5 @@
 use std::sync::mpsc;
+use std::time::Duration;
 
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -7,6 +8,9 @@ use tokio::{
 };
 
 use crate::framing::{try_parse_packet, packet_to_event, RobotEvent};
+
+/// TCP bağlantı timeout süresi
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// TCP worker başlatır (tokio async)
 /// Döndürür: paket gönderme kanalı (tokio mpsc)
@@ -19,8 +23,13 @@ pub fn spawn(
 
     tokio::spawn(async move {
         let addr = format!("{host}:{port}");
-        match TcpStream::connect(&addr).await {
-            Ok(stream) => {
+        let connect_result = tokio::time::timeout(
+            CONNECT_TIMEOUT,
+            TcpStream::connect(&addr),
+        ).await;
+
+        match connect_result {
+            Ok(Ok(stream)) => {
                 // Nagle algoritmasını devre dışı bırak — küçük paketler hemen gönderilsin
                 let _ = stream.set_nodelay(true);
                 let _ = event_tx.send(RobotEvent::Connected(addr.clone()));
@@ -80,9 +89,16 @@ pub fn spawn(
                     }
                 }
             }
-            Err(e) => {
+            Ok(Err(e)) => {
                 let msg = friendly_tcp_error(&e.to_string());
                 let _ = event_tx.send(RobotEvent::Error(msg));
+                let _ = event_tx.send(RobotEvent::Disconnected);
+            }
+            Err(_timeout) => {
+                let _ = event_tx.send(RobotEvent::Error(
+                    "Bağlantı zaman aşımına uğradı (5s). ESP32 açık ve WiFi'ye bağlı mı?".into()
+                ));
+                let _ = event_tx.send(RobotEvent::Disconnected);
             }
         }
     });

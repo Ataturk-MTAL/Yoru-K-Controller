@@ -19,18 +19,22 @@ pub struct JoystickInput {
 }
 
 /// Motor hızları
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
 pub struct MotorSpeeds {
     pub left:  i8, // -100..100
     pub right: i8, // -100..100
 }
 
 /// Diferansiyel sürüş algoritması
-/// Python `joystick_worker.py` ile birebir aynı:
-///   base_speed  = norm_y
-///   turn_factor = norm_x * 0.5
-///   left        = base_speed - turn_factor
-///   right       = base_speed + turn_factor
+///
+/// Tam ileri/geri: her iki motor aynı yön ve hızda.
+/// Tam sağ/sol (yerinde dönüş): motorlar zıt yönde tam güçte.
+/// Köşegen: ağırlıklı karışım — ileri giderken hafif dönüş.
+///
+///   left  = base - turn
+///   right = base + turn
+///
+/// `turn` saf dönüşte `norm_x` (1:1), ileri giderken azaltılır.
 pub fn calculate(input: &JoystickInput) -> MotorSpeeds {
     if input.dx.abs() < DEAD_ZONE_PX && input.dy.abs() < DEAD_ZONE_PX {
         return MotorSpeeds { left: 0, right: 0 };
@@ -44,7 +48,7 @@ pub fn calculate(input: &JoystickInput) -> MotorSpeeds {
     let norm_y = if norm_y.abs() < AXIS_SNAP_THRESHOLD { 0.0 } else { norm_y };
 
     let base = norm_y;
-    let turn = norm_x * 0.5;
+    let turn = norm_x;
 
     MotorSpeeds {
         left:  (base - turn).clamp(-100.0, 100.0) as i8,
@@ -81,18 +85,21 @@ mod tests {
     }
 
     #[test]
-    fn test_turn_right() {
-        // dx pozitif → sağa dön → sol motor daha hızlı
+    fn test_turn_right_in_place() {
+        // Tam sağa → yerinde dönüş: left = -100, right = +100
         let input = JoystickInput { dx: 100.0, dy: 0.0, max_radius: 100.0 };
         let s = calculate(&input);
-        assert!(s.left < s.right, "Sağa dönüşte sol > sağ olmalı değil");
+        assert_eq!(s.left, -100, "Tam sağda sol motor = -100 olmalı");
+        assert_eq!(s.right, 100, "Tam sağda sağ motor = +100 olmalı");
     }
 
     #[test]
-    fn test_turn_left() {
+    fn test_turn_left_in_place() {
+        // Tam sola → yerinde dönüş: left = +100, right = -100
         let input = JoystickInput { dx: -100.0, dy: 0.0, max_radius: 100.0 };
         let s = calculate(&input);
-        assert!(s.right < s.left, "Sola dönüşte sağ > sol olmalı değil");
+        assert_eq!(s.left, 100, "Tam solda sol motor = +100 olmalı");
+        assert_eq!(s.right, -100, "Tam solda sağ motor = -100 olmalı");
     }
 
     #[test]

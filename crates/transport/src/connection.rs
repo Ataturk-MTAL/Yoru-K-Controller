@@ -45,12 +45,15 @@ impl ConnectionManager {
     }
 
     /// TCP bağlantısı kur (ESP32 AP modu)
+    /// Not: `connected` flag'i hemen true olmaz — async bağlantı kurulduktan sonra
+    /// `RobotEvent::Connected` gelir, UI o zaman güncellenir.
+    /// Ancak `sender` hemen kullanılabilir — paketler kuyruğa alınır.
     pub fn connect_tcp(&mut self, host: &str, port: u16) {
         self.disconnect_inner();
         let tx = tcp_worker::spawn(host.to_string(), port, self.event_tx.clone());
         self.sender    = ActiveSender::Tcp(tx);
         self.mode      = ConnectionMode::Tcp;
-        self.connected = true;
+        // connected, RobotEvent::Connected geldiğinde set edilecek
     }
 
     /// Bağlantıyı kes

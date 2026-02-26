@@ -19,12 +19,13 @@ export global AppState {
     in-out property <bool>     tcp-host-valid:  true;
 
     // ── Motor durumu ─────────────────────────────────────
-    in-out property <bool>  motor-running:  false;
-    in-out property <int>   gear:           1;
-    in-out property <int>   left-speed:     0;
-    in-out property <int>   right-speed:    0;
-    in-out property <bool>  reverse-left:   false;
-    in-out property <bool>  reverse-right:  false;
+    in-out property <bool>  motor-running:     false;
+    in-out property <int>   gear:              1;
+    in-out property <int>   left-speed:        0;
+    in-out property <int>   right-speed:       0;
+    in-out property <bool>  reverse-left:      false;
+    in-out property <bool>  reverse-right:     false;
+    in-out property <int>   send-interval-ms:  30;    // Gönderim aralığı (ms): 10/20/30/40/50
 
     // ── Periferal ────────────────────────────────────────
     in-out property <bool>  light-on:  false;

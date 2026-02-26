@@ -22,7 +22,7 @@ use transport::{ConnectionManager, RobotEvent};
 use vision::camera::{spawn_camera, list_cameras, CameraEvent};
 use vision::{SharedFrame, SharedDetections};
 
-use bridge::{SharedState, run_bridge, run_periodic_send, update_joystick_speeds, run_detection};
+use bridge::{SharedState, run_bridge, run_periodic_send, update_joystick_speeds, update_keyboard, run_detection};
 use map::{MapWorld, MapState};
 
 fn main() -> Result<()> {
@@ -120,30 +120,27 @@ fn main() -> Result<()> {
         s.motor_running.store(false, Ordering::Relaxed);
     });
 
-    // AboutWindow referansı — ana pencere kapanırken de erişilebilir
+    // Alt pencere referansları — ana pencere kapanırken de erişilebilir
     let about_ref: Rc<RefCell<Option<AboutWindow>>> = Rc::new(RefCell::new(None));
+    let shortcuts_ref: Rc<RefCell<Option<ShortcutsWindow>>> = Rc::new(RefCell::new(None));
 
+    // ── AboutWindow ────────────────────────────────────
     let ui_weak_about = ui.as_weak();
     let about_ref_show = about_ref.clone();
     ui.on_show_about(move || {
-        // Zaten açıksa tekrar oluşturma
         if about_ref_show.borrow().is_some() { return; }
 
         let Some(ui) = ui_weak_about.upgrade() else { return };
         let about = AboutWindow::new().unwrap();
         about.set_is_dark(AppState::get(&ui).get_is_dark());
 
-        // "Kapat" butonu veya pencere kapatma → hide + referansı temizle
         let about_ref_close = about_ref_show.clone();
         let about_weak = about.as_weak();
         about.on_close_requested(move || {
-            if let Some(a) = about_weak.upgrade() {
-                a.hide().unwrap();
-            }
+            if let Some(a) = about_weak.upgrade() { a.hide().unwrap(); }
             about_ref_close.borrow_mut().take();
         });
 
-        // Pencere X butonuyla kapatılırsa da referansı temizle
         let about_ref_x = about_ref_show.clone();
         about.window().on_close_requested(move || {
             about_ref_x.borrow_mut().take();
@@ -154,11 +151,42 @@ fn main() -> Result<()> {
         *about_ref_show.borrow_mut() = Some(about);
     });
 
-    // Ana pencere kapanırken AboutWindow'u da kapat
+    // ── ShortcutsWindow ────────────────────────────────
+    let ui_weak_sc = ui.as_weak();
+    let sc_ref_show = shortcuts_ref.clone();
+    ui.on_show_shortcuts(move || {
+        if sc_ref_show.borrow().is_some() { return; }
+
+        let Some(ui) = ui_weak_sc.upgrade() else { return };
+        let sc = ShortcutsWindow::new().unwrap();
+        sc.set_is_dark(AppState::get(&ui).get_is_dark());
+
+        let sc_ref_close = sc_ref_show.clone();
+        let sc_weak = sc.as_weak();
+        sc.on_close_requested(move || {
+            if let Some(s) = sc_weak.upgrade() { s.hide().unwrap(); }
+            sc_ref_close.borrow_mut().take();
+        });
+
+        let sc_ref_x = sc_ref_show.clone();
+        sc.window().on_close_requested(move || {
+            sc_ref_x.borrow_mut().take();
+            slint::CloseRequestResponse::HideWindow
+        });
+
+        sc.show().unwrap();
+        *sc_ref_show.borrow_mut() = Some(sc);
+    });
+
+    // ── Ana pencere kapanırken alt pencereleri de kapat ─
     let about_ref_main = about_ref.clone();
+    let sc_ref_main = shortcuts_ref.clone();
     ui.window().on_close_requested(move || {
         if let Some(about) = about_ref_main.borrow_mut().take() {
             let _ = about.hide();
+        }
+        if let Some(sc) = sc_ref_main.borrow_mut().take() {
+            let _ = sc.hide();
         }
         slint::CloseRequestResponse::HideWindow
     });
@@ -264,6 +292,14 @@ fn main() -> Result<()> {
         }
     });
 
+    // Gönderim aralığı
+    let s = state.clone();
+    ui.on_set_send_interval(move |ms| {
+        let ms = (ms as u8).clamp(10, 50);
+        info!(cmd = "GÖND_ARALIK", interval_ms = ms, "Gönderim aralığı değiştirildi");
+        s.send_interval_ms.store(ms, Ordering::Relaxed);
+    });
+
     // Joystick
     let s = state.clone();
     ui.on_joystick_moved(move |dx, dy, max_r| {
@@ -273,6 +309,17 @@ fn main() -> Result<()> {
     let s = state.clone();
     ui.on_joystick_released(move || {
         *s.speeds.lock().unwrap() = Default::default();
+    });
+
+    // Klavye yönlendirme (WASD / ok tuşları)
+    let s = state.clone();
+    ui.on_keyboard_key_down(move |key| {
+        update_keyboard(&s, &key, true);
+    });
+
+    let s = state.clone();
+    ui.on_keyboard_key_up(move |key| {
+        update_keyboard(&s, &key, false);
     });
 
     // ── Kamera ───────────────────────────────────────────
