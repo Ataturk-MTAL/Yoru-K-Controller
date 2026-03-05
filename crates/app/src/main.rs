@@ -507,6 +507,7 @@ fn main() -> Result<()> {
         latest_frame.clone(),
         latest_detections.clone(),
         detection_enabled.clone(),
+        state.clone(),
     );
 
     // Detection worker — usls hub'dan otomatik indirir (ilk çalıştırmada ~6MB)

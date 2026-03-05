@@ -64,11 +64,13 @@ pub fn run_bridge(
     latest_frame:      SharedFrame,       // detection thread'e en son frame'i ilet
     latest_detections: SharedDetections,   // detection sonuçları — frame-bridge okur
     detection_enabled: Arc<AtomicBool>,    // detection açık mı — frame-bridge kontrol eder
+    shared_state:      Arc<SharedState>,   // bağlantı kopunca motoru durdurmak için
 ) {
     // ── Robot event thread ──────────────────────────────
     {
         let ui_weak = ui_weak.clone();
         let gps_track = gps_track.clone();
+        let shared_state = shared_state.clone();
         thread::Builder::new()
             .name("robot-bridge".into())
             .spawn(move || {
@@ -116,15 +118,25 @@ pub fn run_bridge(
                         _ => {
                             let w  = ui_weak.clone();
                             let ev = event.clone();
+                            let ss = shared_state.clone();
                             let _ = slint::invoke_from_event_loop(move || {
                                 let Some(ui) = w.upgrade() else { return };
                                 let state = AppState::get(&ui);
                                 match ev {
                                     RobotEvent::Connected(msg) => {
+                                        // Yeni bağlantıda motoru durdur (farklı cihaz olabilir)
+                                        ss.motor_running.store(false, Ordering::Relaxed);
+                                        *ss.speeds.lock().unwrap() = MotorSpeeds::default();
+                                        *ss.keyboard.lock().unwrap() = KeyboardState::default();
                                         state.set_connected(true);
+                                        state.set_motor_running(false);
                                         state.set_status_text(format!("Bağlı — {msg}").into());
                                     }
                                     RobotEvent::Disconnected => {
+                                        // Bağlantı koptu — motoru ve keyboard'u sıfırla
+                                        ss.motor_running.store(false, Ordering::Relaxed);
+                                        *ss.speeds.lock().unwrap() = MotorSpeeds::default();
+                                        *ss.keyboard.lock().unwrap() = KeyboardState::default();
                                         state.set_connected(false);
                                         state.set_motor_running(false);
                                         state.set_gps_active(false);
