@@ -89,8 +89,39 @@ jobs:
           path: ${{ matrix.artifact_name }}
           retention-days: 7
 
-  release:
-    name: Create GitHub Release
+  release-beta:
+    name: Beta Release (main push)
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Update beta release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: beta
+          name: Beta (latest main)
+          draft: false
+          prerelease: true
+          generate_release_notes: false
+          body: |
+            Bu build otomatik oluşturulmuştur — `main` branch'inin en son hali.
+            Stabil sürüm için versiyonlu release'lere bakın.
+          files: |
+            artifacts/yoru-k-controller-windows.exe/yoru-k-controller-windows.exe
+            artifacts/yoru-k-controller-linux/yoru-k-controller-linux
+            artifacts/yoru-k-controller-macos-arm64/yoru-k-controller-macos-arm64
+
+  release-stable:
+    name: Stable Release (tag push)
     needs: build
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/v')
@@ -104,12 +135,12 @@ jobs:
         with:
           path: artifacts
 
-      - name: Create Release
+      - name: Create stable release
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ github.ref_name }}
           draft: false
-          prerelease: ${{ contains(github.ref_name, '-') }}
+          prerelease: false
           generate_release_notes: true
           files: |
             artifacts/yoru-k-controller-windows.exe/yoru-k-controller-windows.exe
