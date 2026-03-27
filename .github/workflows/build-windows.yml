@@ -3,6 +3,7 @@ name: Build
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -20,7 +21,7 @@ jobs:
             os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact: target/release/app.exe
-            artifact_name: yoru-k-controller-windows
+            artifact_name: yoru-k-controller-windows.exe
 
           - name: Linux x86-64
             os: ubuntu-latest
@@ -73,9 +74,44 @@ jobs:
         env:
           ORT_STRATEGY: download
 
+      - name: Rename artifact (Windows)
+        if: runner.os == 'Windows'
+        run: copy target\release\app.exe yoru-k-controller-windows.exe
+
+      - name: Rename artifact (Unix)
+        if: runner.os != 'Windows'
+        run: cp ${{ matrix.artifact }} ${{ matrix.artifact_name }}
+
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact_name }}
-          path: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact_name }}
           retention-days: 7
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+
+    permissions:
+      contents: write
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          files: |
+            artifacts/yoru-k-controller-windows.exe/yoru-k-controller-windows.exe
+            artifacts/yoru-k-controller-linux/yoru-k-controller-linux
+            artifacts/yoru-k-controller-macos-arm64/yoru-k-controller-macos-arm64
