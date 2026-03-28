@@ -58,7 +58,7 @@ impl YoloDetector {
 
         // YOLO26: end-to-end NMS, output [1, 300, 6]
         // with_model_ixx: sabit 640×640 — ORT/CoreML static shape için zorunlu
-        let mut config = Config::yolo_detect()
+        let config = Config::yolo_detect()
             .with_version(Version::from(26_u8))
             .with_scale(Scale::N)
             .with_model(ort_cfg)
