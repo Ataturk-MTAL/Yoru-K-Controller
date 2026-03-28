@@ -21,7 +21,7 @@ import { JoystickPanel }   from "components/joystick_panel.slint";
 import { SpeedDisplay }    from "components/speed_display.slint";
 import { CameraView }      from "components/camera_view.slint";
 import { MapView }         from "components/map_view.slint";
-import { Palette, StandardButton, Button } from "std-widgets.slint";
+import { Palette, StandardButton, Button, ScrollView } from "std-widgets.slint";
 
 export { AppState }
 
@@ -31,7 +31,7 @@ export component AppWindow inherits Window {
     default-font-weight: 600;
     background: AppTheme.bg;
     min-width: 1024px;
-    min-height: 860px;
+    min-height: 768px;
     preferred-width: 1280px;
     preferred-height: 960px;
 
@@ -393,70 +393,76 @@ export component AppWindow inherits Window {
                         background: AppTheme.border-subtle;
                     }
 
-                    VerticalLayout {
-                        padding: AppTheme.space-lg;
-                        spacing: AppTheme.space-lg;
+                    ScrollView {
+                        x: 1px;
+                        width: parent.width - 1px;
+                        height: parent.height;
+                        viewport-width: self.visible-width;
 
-                        ConnectionPanel {
-                            connect-serial(p, b) => {
-                                root.connect-serial(p, b);
-                            }
-                            connect-tcp(h, p) => {
-                                root.connect-tcp(h, p);
-                            }
-                            disconnect() => {
-                                root.disconnect();
-                            }
-                            refresh-ports() => {
-                                root.refresh-ports();
-                            }
-                            validate-host(h) => {
-                                root.validate-host(h);
-                            }
-                        }
+                        VerticalLayout {
+                            width: parent.viewport-width;
+                            padding: AppTheme.space-lg;
+                            spacing: AppTheme.space-lg;
 
-                        TSeparator { }
+                            ConnectionPanel {
+                                connect-serial(p, b) => {
+                                    root.connect-serial(p, b);
+                                }
+                                connect-tcp(h, p) => {
+                                    root.connect-tcp(h, p);
+                                }
+                                disconnect() => {
+                                    root.disconnect();
+                                }
+                                refresh-ports() => {
+                                    root.refresh-ports();
+                                }
+                                validate-host(h) => {
+                                    root.validate-host(h);
+                                }
+                            }
 
-                        MotorControl {
-                            start() => {
-                                root.send-start();
-                            }
-                            stop() => {
-                                root.send-stop();
-                            }
-                            set-gear(g) => {
-                                root.set-gear(g);
-                            }
-                            set-light(v) => {
-                                root.send-light(v);
-                            }
-                            set-brake(v) => {
-                                root.send-brake(v);
-                            }
-                            set-reverse-l(v) => {
-                                root.set-reverse-left(v);
-                            }
-                            set-reverse-r(v) => {
-                                root.set-reverse-right(v);
-                            }
-                            set-send-interval(ms) => {
-                                root.set-send-interval(ms);
-                            }
-                        }
+                            TSeparator { }
 
-                        TSeparator { }
-
-                        JoystickPanel {
-                            moved(dx, dy, r) => {
-                                root.joystick-moved(dx, dy, r);
+                            MotorControl {
+                                start() => {
+                                    root.send-start();
+                                }
+                                stop() => {
+                                    root.send-stop();
+                                }
+                                set-gear(g) => {
+                                    root.set-gear(g);
+                                }
+                                set-light(v) => {
+                                    root.send-light(v);
+                                }
+                                set-brake(v) => {
+                                    root.send-brake(v);
+                                }
+                                set-reverse-l(v) => {
+                                    root.set-reverse-left(v);
+                                }
+                                set-reverse-r(v) => {
+                                    root.set-reverse-right(v);
+                                }
+                                set-send-interval(ms) => {
+                                    root.set-send-interval(ms);
+                                }
                             }
-                            released() => {
-                                root.joystick-released();
-                            }
-                        }
 
-                        SpeedDisplay {
-                            vertical-stretch: 1;
+                            TSeparator { }
+
+                            JoystickPanel {
+                                moved(dx, dy, r) => {
+                                    root.joystick-moved(dx, dy, r);
+                                }
+                                released() => {
+                                    root.joystick-released();
+                                }
+                            }
+
+                            SpeedDisplay { }
                         }
                     }
                 }

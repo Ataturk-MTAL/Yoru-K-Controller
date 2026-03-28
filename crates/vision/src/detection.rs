@@ -19,30 +19,10 @@ pub struct YoloDetector {
 }
 
 impl YoloDetector {
-    /// Platform'a göre en iyi execution provider seçer.
-    /// Cargo.toml'daki platform bazlı usls feature'larıyla eşleşir:
-    ///   macOS   → CoreML (ANE/GPU)
-    ///   Windows → DirectML (GPU)
-    ///   Linux   → CPU
-    fn best_device() -> usls::Device {
-        #[cfg(target_os = "macos")]
-        { return usls::Device::CoreMl; }
-
-        #[cfg(target_os = "windows")]
-        { return usls::Device::DirectMl(0); }
-
-        #[allow(unreachable_code)]
-        usls::Device::Cpu(0)
-    }
-
-    /// ONNX model dosyasından dedektör oluşturur.
-    /// `model_path`: yerel dosya yolu veya "" (usls hub'dan otomatik indirir)
-    pub fn new(model_path: &str) -> Result<Self> {
-        let device = Self::best_device();
-        eprintln!("[detection] Execution provider: {:?}", device);
-
+    /// ORT config + YOLO config'i verilen device ile derler.
+    fn build(model_path: &str, device: usls::Device) -> Result<Runtime<YOLO>> {
         // macOS CoreML: 1 dry-run → model ANE/GPU için JIT compile edilir
-        // Diğer: 0 dry-run (ORT dynamic shape Concat bug workaround)
+        // Diğer: 0 dry-run
         #[cfg(target_os = "macos")]
         let num_dry: usize = 1;
         #[cfg(not(target_os = "macos"))]
@@ -69,9 +49,6 @@ impl YoloDetector {
             .with_class_confs(&[0.5]);
 
         // macOS CoreML: ANE için optimize
-        // compute_units=2 → CPUAndNeuralEngine
-        // static_input_shapes=true → sabit 640×640 ile graph compile
-        // model_format=0 → MLProgram (Apple Silicon için optimize)
         #[cfg(target_os = "macos")]
         {
             config = config
@@ -81,8 +58,42 @@ impl YoloDetector {
         }
 
         let config = config.commit()?;
-        let runtime = YOLO::new(config)?;
-        Ok(Self { runtime })
+        YOLO::new(config)
+    }
+
+    /// ONNX model dosyasından dedektör oluşturur.
+    /// `model_path`: yerel dosya yolu veya "" (usls hub'dan otomatik indirir)
+    pub fn new(model_path: &str) -> Result<Self> {
+        // Windows: DirectML dene → desteklenmiyorsa CPU'ya düş
+        #[cfg(target_os = "windows")]
+        {
+            let dml = usls::Device::DirectMl(0);
+            eprintln!("[detection] Execution provider: {:?}", dml);
+            match Self::build(model_path, dml) {
+                Ok(runtime) => return Ok(Self { runtime }),
+                Err(e) => {
+                    eprintln!("[detection] DirectML başarısız, CPU'ya geçiliyor: {e}");
+                    let runtime = Self::build(model_path, usls::Device::Cpu(0))?;
+                    eprintln!("[detection] Execution provider: Cpu(0)");
+                    return Ok(Self { runtime });
+                }
+            }
+        }
+
+        // macOS: CoreML
+        #[cfg(target_os = "macos")]
+        let device = usls::Device::CoreMl;
+
+        // Linux / diğer
+        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
+        let device = usls::Device::Cpu(0);
+
+        #[allow(unreachable_code)]
+        {
+            eprintln!("[detection] Execution provider: {:?}", device);
+            let runtime = Self::build(model_path, device)?;
+            Ok(Self { runtime })
+        }
     }
 
     /// RGBA8 frame üzerinde nesne tespiti yapar.
@@ -101,13 +112,11 @@ impl YoloDetector {
         let mut detections = Vec::new();
         if let Some(y) = results.into_iter().next() {
             for hbb in &y.hbbs {
-                // usls Hbb: x, y, w, h (top-left origin) → f32
                 let x1 = hbb.x();
                 let y1 = hbb.y();
                 let x2 = x1 + hbb.w();
                 let y2 = y1 + hbb.h();
 
-                // confidence ve id Option<T> döndürür
                 let confidence = hbb.confidence().unwrap_or(0.0);
                 let class_id   = hbb.id().unwrap_or(0);
                 let class_name = hbb.name().unwrap_or("?").to_string();
