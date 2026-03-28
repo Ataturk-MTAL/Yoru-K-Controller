@@ -3,4 +3,11 @@ fn main() {
         .with_style("fluent-dark".into());
     slint_build::compile_with_config("ui/app.slint", config)
         .expect("Slint derleme hatası");
+
+    #[cfg(windows)]
+    {
+        let mut res = winresource::WindowsResource::new();
+        res.set_icon("assets/icon.ico");
+        res.compile().expect("Windows kaynak dosyası gömülemedi");
+    }
 }
