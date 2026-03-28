@@ -99,39 +99,29 @@ jobs:
           wget -q https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
           chmod +x linuxdeploy-x86_64.AppImage
 
-          # AppDir yapısı
-          mkdir -p AppDir/usr/bin AppDir/usr/share/icons/hicolor/scalable/apps
+          # AppDir yapısı — .desktop usr/share/applications/ altında olmalı
+          mkdir -p AppDir/usr/bin
+          mkdir -p AppDir/usr/share/applications
+          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
 
           cp target/release/app AppDir/usr/bin/yoru-k-controller
 
-          # SVG ikonu PNG'ye çevir (AppImage için 256x256 PNG gerekli)
-          rsvg-convert -w 256 -h 256 crates/app/ui/assets/Yörü-K-1.svg \
-            -o AppDir/usr/share/icons/hicolor/256x256/apps/yoru-k-controller.png 2>/dev/null || \
+          # SVG → 256x256 PNG ikon
           rsvg-convert -w 256 -h 256 "crates/app/ui/assets/Yörü-K-1.svg" \
-            -o AppDir/yoru-k-controller.png || true
+            -o AppDir/usr/share/icons/hicolor/256x256/apps/yoru-k-controller.png
 
-          mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
-          [ -f AppDir/usr/share/icons/hicolor/256x256/apps/yoru-k-controller.png ] || \
-            cp AppDir/yoru-k-controller.png \
-               AppDir/usr/share/icons/hicolor/256x256/apps/yoru-k-controller.png 2>/dev/null || true
-
-          # .desktop dosyası
-          cat > AppDir/yoru-k-controller.desktop << 'DESKTOP'
-          [Desktop Entry]
-          Name=Yörü-K Controller
-          Exec=yoru-k-controller
-          Icon=yoru-k-controller
-          Type=Application
-          Categories=Utility;
-          DESKTOP
+          # .desktop — heredoc YAML'ı bozduğundan printf kullan
+          printf '[Desktop Entry]\nName=Yoru-K Controller\nExec=yoru-k-controller\nIcon=yoru-k-controller\nType=Application\nCategories=Utility;\n' \
+            > AppDir/usr/share/applications/yoru-k-controller.desktop
 
           # AppImage oluştur (FUSE3 olmadan extracted mod)
           APPIMAGE_EXTRACT_AND_RUN=1 ./linuxdeploy-x86_64.AppImage \
             --appdir AppDir \
             --output appimage
 
-          mv Yoru-K_Controller*.AppImage yoru-k-controller-linux.AppImage || \
-          mv *.AppImage yoru-k-controller-linux.AppImage
+          # Türkçe karakter içerebileceğinden find ile bul
+          APPIMAGE_FILE=$(find . -maxdepth 1 -name "*.AppImage" | head -1)
+          mv "$APPIMAGE_FILE" yoru-k-controller-linux.AppImage
 
       # ── macOS: .app bundle → .tar.gz ───────────────────────────────────
       - name: Package (macOS .app)
