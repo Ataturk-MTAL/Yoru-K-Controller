@@ -26,6 +26,13 @@ use bridge::{SharedState, run_bridge, run_periodic_send, update_joystick_speeds,
 use map::{MapWorld, MapState};
 
 fn main() -> Result<()> {
+    // ── Windows: OpenGL yerine software renderer ─────────
+    // femtovg/glow OpenGL context açamadığında panic atar.
+    // DirectX/DirectML olan ama OpenGL sürücüsü eksik sistemler için
+    // Slint'in saf yazılım renderer'ını kullan.
+    #[cfg(target_os = "windows")]
+    std::env::set_var("SLINT_BACKEND", "winit-software");
+
     // ── Loglama (sadece debug build'de aktif) ────────────
     #[cfg(debug_assertions)]
     tracing_subscriber::fmt()
