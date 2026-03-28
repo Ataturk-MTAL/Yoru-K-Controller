@@ -26,12 +26,12 @@ use bridge::{SharedState, run_bridge, run_periodic_send, update_joystick_speeds,
 use map::{MapWorld, MapState};
 
 fn main() -> Result<()> {
-    // ── Windows: OpenGL yerine software renderer ─────────
+    // ── Windows: Direct3D (Skia) renderer ───────────────
     // femtovg/glow OpenGL context açamadığında panic atar.
-    // DirectX/DirectML olan ama OpenGL sürücüsü eksik sistemler için
-    // Slint'in saf yazılım renderer'ını kullan.
+    // Skia renderer Windows'ta Direct3D 11 kullandığından OpenGL
+    // sürücüsüne ihtiyaç duymaz. software fallback olarak da eklendi.
     #[cfg(target_os = "windows")]
-    std::env::set_var("SLINT_BACKEND", "winit-software");
+    std::env::set_var("SLINT_BACKEND", "winit-skia");
 
     // ── Loglama (sadece debug build'de aktif) ────────────
     #[cfg(debug_assertions)]
