@@ -17,6 +17,10 @@ export component MapView {
     out property <length> visible-width:  fli.width;
     out property <length> visible-height: fli.height;
 
+    // Pencere resize → tile sistemini güncelle
+    changed visible-width  => { root.map-flicked(fli.viewport-x, fli.viewport-y); }
+    changed visible-height => { root.map-flicked(fli.viewport-x, fli.viewport-y); }
+
     // Rust'tan viewport ayarı (zoom değiştiğinde çağrılır)
     public function set-viewport(ox: length, oy: length, w: length, h: length) {
         fli.viewport-x = ox;
