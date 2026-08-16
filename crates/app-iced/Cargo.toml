@@ -1,0 +1,19 @@
+[package]
+name    = "app-iced"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+protocol  = { path = "../protocol" }
+transport = { path = "../transport" }
+control   = { path = "../control" }
+vision    = { path = "../vision" }
+
+iced    = { workspace = true }
+tokio   = { workspace = true }
+anyhow  = { workspace = true }
+image   = { workspace = true }
+reqwest = { workspace = true }
+
+tracing            = { workspace = true }
+tracing-subscriber = { workspace = true }

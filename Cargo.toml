@@ -1,11 +1,15 @@
 [workspace]
-members = ["crates/protocol", "crates/transport", "crates/control", "crates/vision", "crates/app"]
+members = ["crates/protocol", "crates/transport", "crates/control", "crates/vision", "crates/app", "crates/app-iced"]
 resolver = "2"
 
 [workspace.dependencies]
 # UI
 slint       = { version = "1.15.1", features = ["renderer-skia", "renderer-software"] }
 slint-build = "1.15.1"
+
+# UI (iced portu — crates/app-iced)
+# image: kamera karesi + OSM tile'ları canvas'a çizmek için gerekli
+iced = { version = "0.14", features = ["tokio", "canvas", "image"] }
 
 # Async
 tokio = { version = "1.41", features = ["full"] }
