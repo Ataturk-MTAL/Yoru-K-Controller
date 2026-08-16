@@ -96,7 +96,7 @@ pub fn spawn(
             }
             Err(_timeout) => {
                 let _ = event_tx.send(RobotEvent::Error(
-                    "Bağlantı zaman aşımına uğradı (5s). ESP32 açık ve WiFi'ye bağlı mı?".into()
+                    "Bağlantı zaman aşımına uğradı (5s). ESP32 Kontrol kartı açık ve WiFi'ye bağlı mı?".into()
                 ));
                 let _ = event_tx.send(RobotEvent::Disconnected);
             }
