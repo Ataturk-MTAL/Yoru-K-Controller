@@ -1,7 +1,7 @@
 # Yörü-K Kontrolcü
 
 Diferansiyel sürüşlü bir mobil robotu **seri port** veya **TCP/IP** üzerinden kontrol eden masaüstü uygulaması.
-Rust + Slint ile yazılmıştır; OpenCV bağımlılığı yoktur.
+Rust + [iced](https://iced.rs) ile yazılmıştır; OpenCV bağımlılığı yoktur.
 
 ---
 
@@ -9,14 +9,15 @@ Rust + Slint ile yazılmıştır; OpenCV bağımlılığı yoktur.
 
 | Kategori | Özellik |
 |---|---|
-| **Kontrol** | Farekli joystick, WASD / ok tuşu klavye kontrolü |
+| **Kontrol** | Fareyle joystick, WASD / ok tuşu klavye kontrolü |
 | **Bağlantı** | Seri port (UART) ve TCP/IP (ESP32 AP modu) |
 | **Protokol** | Binary paket formatı, Fletcher-16 checksum |
 | **Motor** | Diferansiyel sürüş, 3 vites, motor ters bağlantı desteği |
-| **Periferal** | Işık ve fren toggle |
+| **Çevre birimi** | Işık ve fren toggle |
 | **Kamera** | Gerçek zamanlı kamera görüntüsü (nokhwa, AVFoundation) |
-| **AI Tespit** | YOLOv8 ONNX nesne tespiti, NMS, bbox çizimi |
-| **Faz 2** | GPS OSM harita entegrasyonu *(planlandı)* |
+| **AI Tespit** | YOLO26 ONNX nesne tespiti, bbox çizimi |
+| **Harita** | OpenStreetMap tile haritası + GPS robot işaretçisi |
+| **Tema** | Koyu / açık tema, Material 3 rol modeli |
 
 ---
 
@@ -24,31 +25,30 @@ Rust + Slint ile yazılmıştır; OpenCV bağımlılığı yoktur.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│  🤖 YÖRÜ-K          WASD · Space=DUR · L=Işık · B=Fren · 1/2/3 │
+│  YÖRÜ-K      [📷 Kamera] [🛰 Harita]   Kısayollar Hakkında  🌙  │
 ├──────────────────────────────┬──────────────────────────────────┤
-│                              │  ┌─ BAĞLANTI ──────────────────┐ │
-│                              │  │  [ Serial ]  [ TCP/IP ]     │ │
-│       KAMERA GÖRÜNTÜSÜ       │  │  Port: /dev/tty...  [↻]     │ │
-│     (YOLO tespit kutuları)   │  │  [        BAĞLAN        ]   │ │
-│                              │  └─────────────────────────────┘ │
-│  ┌──────────────────────┐    │  ┌─ MOTOR KONTROL ─────────────┐ │
-│  │  person  87%         │    │  │  [ ▶ BAŞLAT ] [ ■ DURDUR ] │ │
-│  └──────────────────────┘    │  │  VİTES:  [V1] [V2] [V3]    │ │
-│                              │  │  [💡 IŞIK]    [🛑 FREN]     │ │
-│  ● Robot bağlı değil         │  │  [↺ Sol Ters] [↻ Sağ Ters] │ │
-│  ■ Durdur  ▶ Başlat          │  └─────────────────────────────┘ │
-│                              │  ┌─ JOYSTICK ──────────────────┐ │
-│                              │  │        ╭─────╮              │ │
-│                              │  │       ╭┤  ●  ├╮             │ │
-│                              │  │        ╰─────╯              │ │
-│                              │  └─────────────────────────────┘ │
-│                              │  ┌─ HIZ GÖSTERGESİ ────────────┐ │
-│                              │  │  Sol: ████████░░  +72       │ │
-│                              │  │  Sağ: ████████░░  +72       │ │
-│                              │  │  Vites: V2     ● Çalışıyor  │ │
-│                              │  └─────────────────────────────┘ │
+│  ● Yörü-K bağlı değil        │  BAĞLANTI                        │
+│                              │  [ Serial ]  [ TCP/IP ]          │
+│                              │  Port: /dev/tty...        [↻]    │
+│       KAMERA GÖRÜNTÜSÜ       │  [         BAĞLAN          ]     │
+│     (YOLO tespit kutuları)   │  ● Bağlantı yok                  │
+│                              │  ─────────────────────────────   │
+│                   [10 FPS]   │  MOTOR KONTROL                   │
+│                   [2 nesne]  │  [     ▶ Motor BAŞLAT      ]     │
+│                              │  Vites:         [−] V1 [+]       │
+│                              │  Gönd. Aralığı: [−] 30 ms [+]    │
+│                              │  [💡 IŞIK]     [🛑 FREN]         │
+│                              │  [↺ Sol Ters]  [↻ Sağ Ters]      │
+│  ┌──────────────────────────┐│  ─────────────────────────────   │
+│  │0: Kamera ▾ [↻] [▶ Başlat]││  SÜRÜŞ KUMANDA KOLU              │
+│  └──────────────────────────┘│        ╭───────────╮             │
+│                              │        │     ●     │             │
+│                              │        ╰───────────╯             │
+│                              │  HIZ GÖSTERGESİ                  │
+│                              │  Sol ▬▬▬▬│▬▬▬▬  +0               │
+│                              │  Sağ ▬▬▬▬│▬▬▬▬  +0               │
 ├──────────────────────────────┴──────────────────────────────────┤
-│  ● Bağlı — /dev/tty.usbserial-0001               v0.1.0        │
+│  ● Serial — Bağlı  │ ● Motor Durdu      Bağlı — /dev/tty...     │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -56,73 +56,42 @@ Rust + Slint ile yazılmıştır; OpenCV bağımlılığı yoktur.
 
 ## Gereksinimler
 
-### Derleme Araçları
-
-- **Rust** 1.75+ ([rustup.rs](https://rustup.rs))
+- **Rust** 1.88+ ([rustup.rs](https://rustup.rs)) — iced 0.14'ün `rust-version` alt sınırı
 - **macOS** ARM64 / x86-64 (Linux ve Windows de desteklenir)
 
-### Rust Bağımlılıkları (otomatik indirilir)
+Bağımlılıklar `cargo build` sırasında otomatik indirilir:
 
 | Crate | Versiyon | Amaç |
 |---|---|---|
-| `slint` | 1.15.1 | UI framework |
-| `ort` | 2.0.0-rc.11 | ONNX Runtime (YOLO inference) |
-| `nokhwa` | 0.10 | Kamera yakalama (AVFoundation) |
+| `iced` | 0.14 | UI framework (wgpu renderer) |
+| `usls` | 0.2.0-alpha.3 | YOLO26 ONNX çalıştırma (ORT sarmalayıcı) |
+| `nokhwa` | 0.10 | Kamera yakalama |
 | `serialport` | 4.6 | Seri port iletişimi |
-| `tokio` | 1.41 | Async TCP runtime |
-| `imageproc` | 0.26 | OpenCV'siz bbox çizimi |
-| `image` | 0.25 | Görüntü işleme |
-| `ndarray` | 0.17 | ONNX tensor verisi |
+| `tokio` | 1.41 | Async TCP runtime + tile indirme |
+| `reqwest` | 0.13 | OSM tile HTTP istemcisi |
+| `image` / `imageproc` | 0.25 / 0.26 | Görüntü işleme, bbox çizimi |
 
-> **Not:** `ort` crate'i `download-binaries` özelliğiyle ONNX Runtime'ı ilk derlemede otomatik indirir, harici kurulum gerekmez.
+> **Not:** ONNX Runtime, `usls`'in `ort-download-binaries` özelliğiyle ilk derlemede otomatik iner; harici kurulum gerekmez. Çalıştırma sağlayıcısı platforma göre seçilir: macOS → CoreML, Windows → DirectML (başarısızsa CPU), Linux → CPU.
 
 ---
 
-## Kurulum ve Derleme
-
-### 1. Projeyi klonla
+## Kurulum ve Çalıştırma
 
 ```bash
-git clone <repo-url> Yoru-K-Controller-Rust
-cd Yoru-K-Controller-Rust
-```
-
-### 2. YOLO modelini hazırla
-
-```bash
-# Python ortamında (bir kez):
-pip install ultralytics
-yolo export model=yolov8n.pt format=onnx opset=12
-
-# Modeli assets/ klasörüne taşı:
-mkdir -p assets
-cp yolov8n.onnx assets/
-```
-
-### 3. Derle ve çalıştır
-
-```bash
-cargo build --release
+git clone https://github.com/Ataturk-MTAL/Yoru-K-Controller.git
+cd Yoru-K-Controller
 cargo run --release
 ```
 
-Geliştirme modunda:
-
-```bash
-cargo run
-```
+YOLO modeli ayrıca hazırlanmaz: uygulama çalışma dizininde `v26-n-det.onnx` varsa onu kullanır, yoksa modeli `usls` hub'ından indirir (ilk çalıştırmada ~6 MB).
 
 ---
 
 ## Proje Yapısı
 
 ```
-Yoru-K-Controller-Rust/
+Yoru-K-Controller/
 ├── Cargo.toml                  ← Workspace manifest
-├── Cargo.lock
-├── assets/
-│   └── yolov8n.onnx            ← YOLO modeli (git'e dahil değil)
-│
 └── crates/
     ├── protocol/               ← Saf Rust, bağımlılık yok
     │   └── src/
@@ -144,29 +113,58 @@ Yoru-K-Controller-Rust/
     ├── vision/                 ← Kamera + YOLO (ağır bağımlılıklar izole)
     │   └── src/
     │       ├── camera.rs       ← nokhwa frame yakalama
-    │       ├── detection.rs    ← ort ONNX inference, NMS
+    │       ├── detection.rs    ← usls YOLO26 çıkarımı
     │       └── drawing.rs      ← imageproc ile bbox çizimi
     │
-    └── app/                    ← Binary crate, her şeyi bağlar
-        ├── build.rs            ← slint_build::compile()
-        ├── src/
-        │   ├── main.rs         ← Giriş, Slint event loop, callback bağlantıları
-        │   └── bridge.rs       ← Slint ↔ Rust thread köprüsü
-        └── ui/
-            ├── app.slint       ← Ana pencere, klavye handler'ları
-            ├── theme.slint     ← Renkler, fontlar, spacing sabitleri
-            ├── state.slint     ← Global AppState singleton
-            └── components/
-                ├── connection_panel.slint
-                ├── motor_control.slint
-                ├── joystick_panel.slint
-                ├── speed_display.slint
-                └── camera_view.slint
+    └── app/                    ← Binary crate, arayüz
+        ├── build.rs            ← Windows .exe ikonu
+        ├── assets/             ← Fontlar (Saira, Space Mono), ikon, logo
+        └── src/
+            ├── main.rs         ← iced::application, abonelikler, kısayollar
+            ├── state.rs        ← Uygulama modeli (tek doğruluk kaynağı)
+            ├── message.rs      ← Mesaj enum'u
+            ├── update.rs       ← Durum makinesi
+            ├── backend.rs      ← Transport köprüsü + periyodik gönderim
+            ├── camera.rs       ← Kamera/tespit hattı
+            ├── map.rs          ← OSM tile matematiği ve indirme
+            ├── theme.rs        ← Renk rolleri, ölçü token'ları
+            ├── styles.rs       ← Widget stilleri
+            └── view/           ← Görünüm katmanı (panel başına bir dosya)
 ```
 
 ---
 
+## Arayüz Mimarisi
+
+iced **MVU** (Model-View-Update) üzerine kurulu:
+
+```
+App (state.rs) ──► view() ──► widget ağacı ──► etkileşim ──► Message
+  ▲                                                            │
+  └──────────────── update() ◄─────────────────────────────────┘
+                       │
+                   Task<Message> ──► async iş ──► Message
+```
+
+- `view` saf: yalnızca `App` alanlarını okur, hiçbir atomik ya da mutex görmez.
+- `update` bloklamaz: paketler `Backend` üzerinden kuyruğa bırakılır; port/kamera listeleme ve tile indirme `Task::perform` ile arka plana gider.
+- Donanım olayları (robot paketleri, kamera kareleri) `Subscription` üzerinden mesaja dönüşür.
+
+### Tema
+
+Renkler Material 3 rol modeline göre tanımlı (`theme.rs`):
+
+- Her dolgu rolünün bir `on_*` eşi var — renkli zemin üzerindeki metin rengi tahmine bırakılmaz.
+- `*_container` aileleri yumuşak tint yüzeyler için (rozet, uyarı şeridi).
+- Yüzey merdiveni ton tabanlı: `surface_dim` → `surface_container_low` → `surface_container` → `surface_container_high` → `surface_container_highest`. Gölge kullanılmaz.
+- Hover/pressed ayrı renk değil; taban rengin üstüne `on_*` karışımı (durum katmanı).
+- Buton, metin kutusu ve seçim kutusu tek standart yükseklikte (`CONTROL_HEIGHT`).
+
+---
+
 ## İletişim Protokolü
+
+Tam referans: [`PROTOCOL.md`](PROTOCOL.md)
 
 ### Paket Formatı
 
@@ -190,35 +188,22 @@ Yoru-K-Controller-Rust/
 | `0x01` | `SetSpeed` | Hız paketi gönder |
 | `0x02` | `SetLight` | Işık aç/kapat |
 | `0x03` | `SetBrake` | Fren aç/kapat |
+| `0x04` | `SetGpsEnable` | GPS yayınını başlat/durdur |
 | `0xFF` | `SetStart` | Motor başlat |
 | `0x10` | `GetStatus` | Motor durumu sorgula |
 | `0x11` | `GetSpeed` | Anlık hız sorgula |
-| `0x14` | `GetGps` | GPS koordinatı sorgula *(Faz 2)* |
+| `0x14` | `GetGps` | GPS koordinatı (float32 LE ×2) |
 
-### Hız Paketi Detayı
+### Hız Paketi
 
 ```
 AA 01 07 [vites] 4C [sol_yön] [sol_abs] 52 [sağ_yön] [sağ_abs] [CK2] [CK1]
 ```
 
 - `vites`: `1`, `2` veya `3`
-- `4C` = `'L'` (sol motor işaretçisi)
-- `52` = `'R'` (sağ motor işaretçisi)
+- `4C` = `'L'` (sol motor işaretçisi), `52` = `'R'` (sağ motor işaretçisi)
 - `yön`: `0x46` = `'F'` (ileri) / `0x42` = `'B'` (geri)
 - `abs`: mutlak hız değeri `0–100`
-
-### Fletcher-16 Checksum
-
-```rust
-// pkt[1..] üzerinden — START_BYTE hariç
-let mut sum1: u32 = 0;
-let mut sum2: u32 = 0;
-for &b in data {
-    sum1 = (sum1 + b as u32) % 255;
-    sum2 = (sum2 + sum1) % 255;
-}
-[sum2 as u8, sum1 as u8]  // paketin sonuna [CK2, CK1] olarak eklenir
-```
 
 ---
 
@@ -227,18 +212,18 @@ for &b in data {
 ### Joystick — Diferansiyel Sürüş
 
 ```
-norm_x = dx / max_radius  (−1.0 … 1.0)
-norm_y = dy / max_radius  (−1.0 … 1.0)
+norm_x = (dx / max_radius) × 100   (−100 … 100)
+norm_y = (dy / max_radius) × 100   (−100 … 100)
 
-base  = norm_y × 100
-turn  = norm_x × 50
+|norm_x| < 8  →  norm_x = 0        (eksen snap: düz ileri/geri)
+|norm_y| < 8  →  norm_y = 0        (eksen snap: yerinde dönüş)
 
-sol_motor  = clamp(base − turn, −100, 100)
-sağ_motor  = clamp(base + turn, −100, 100)
+sol_motor = clamp(norm_y − norm_x, −100, 100)
+sağ_motor = clamp(norm_y + norm_x, −100, 100)
 ```
 
 - Ölü bölge: `|dx| < 15px && |dy| < 15px` → hız = 0
-- Joystick halka sınırına kenetlenir (daire dışına çıkmaz)
+- Bilek, halkanın içinde kalacak biçimde kenetlenir
 
 ### Klavye (WASD / Ok Tuşları)
 
@@ -246,42 +231,39 @@ sağ_motor  = clamp(base + turn, −100, 100)
 |---|---|---|
 | W / ↑ | +100 | +100 |
 | S / ↓ | −100 | −100 |
-| A / ← | −50 | +50 |
-| D / → | +50 | −50 |
-| W+D | +50 | +100 |
-| W+A | +100 | +50 |
+| A / ← | +100 | −100 |
+| D / → | −100 | +100 |
+| W + D | 0 | +100 |
+| W + A | +100 | 0 |
 
-### Motor Ters Bağlantı (Sırt Sırta Montaj)
+> Klavye girdileri yalnızca motor çalışırken işlenir; odakta bir metin alanı varsa tuşlar sürüşe gitmez.
 
-Motorlar karşılıklı monte edildiğinde sol veya sağ motor yönü yazılımdan tersine çevrilebilir.
-`↺ Sol Ters` / `↻ Sağ Ters` butonlarından biri aktifken diğeri devre dışı kalır (mutex).
+### Motor Ters Bağlantı
+
+Motorlar sırt sırta monte edildiğinde sol veya sağ motorun yönü yazılımdan tersine çevrilebilir. İki bayrak karşılıklı dışlar: biri açılınca diğeri kapanır. Tersine çevirme, yön baytı ve mutlak değer hesabından **önce** uygulanır.
 
 ---
 
 ## Thread Mimarisi
 
 ```
-Ana Thread (Slint Event Loop)
+iced event loop (ana thread)
     │
-    ├── serial_thread ────────────────────────────────────────┐
-    │   serialport blocking I/O                               │
-    │   mpsc::Sender<RobotEvent> ──────────────────────────►  │
-    │                                                         │
-    ├── tokio runtime (TCP) ───────────────────────────────── │
-    │   tokio::net::TcpStream async                          │
-    │   mpsc::Sender<RobotEvent> ──────────────────────────► │
-    │                                                         ▼
-    ├── camera_thread ──────────────────────────────► bridge_thread
-    │   nokhwa AVFoundation                          │  Kanalları poll eder
-    │   SyncSender<RgbaFrame> (capacity=1)          │  slint::invoke_from_event_loop()
-    │   → frame drop: meşgulken yeni frame düşer   │  ~120 Hz (8ms uyku)
-    │                                                │
-    └── periodic_send_thread                         │
-        50ms döngü, 20Hz hız gönderimi              │
-        Hysteresis filtresi: |Δhız| ≤ 2 → atla     │
+    ├── robot-event-pump ──► tokio kanalı ──► Subscription ──► Message::Robot
+    │     serial-worker / tokio TCP task olaylarını toplar
+    │
+    ├── periodic-send
+    │     motor çalışırken her `send_interval_ms`'de hız paketi gönderir
+    │     (hız değişmese de gönderilir — ESP32 zaman aşımına düşmesin)
+    │
+    ├── camera-worker ──► SyncSender(cap=1) ──► frame-pump ──► tokio kanalı(cap=2)
+    │     nokhwa yakalama                bbox çizimi burada    ──► Message::Camera
+    │
+    └── detection-worker
+          300 ms'de bir çıkarım; kapalıyken uyur (CPU sıfır)
 ```
 
-**Frame drop mekanizması:** `SyncSender::try_send` kapasitesi 1'dir. Kamera thread'i yeni frame üretirken önceki henüz işlenmediyse yeni frame sessizce düşer — Python'daki `m_busy` AtomicInt'in Rust karşılığı.
+Kare düşürme iki noktada: kamera thread'i kanal doluyken decode'u atlar, pump ise UI kanalı doluyken kareyi düşürür. Görüntü böylece hep anlık kalır.
 
 ---
 
@@ -297,92 +279,79 @@ Ana Thread (Slint Event Loop)
 | `1` / `2` / `3` | Vites seç |
 | `L` | Işık aç/kapat |
 | `B` | Fren aç/kapat |
+| `C` / `M` | Kamera / Harita sekmesi |
+| `T` | Tema değiştir |
+| `Esc` | Açık pencereyi kapat |
 
 ---
 
 ## TCP/IP Bağlantısı (ESP32 AP Modu)
 
-ESP32, `192.168.4.1:80` adresinde erişilebilir bir AP açar.
-Bağlantı panelinde TCP/IP modunu seçip bu adresi girdikten sonra Bağlan butonuna basın.
+ESP32, `192.168.4.1:80` adresinde erişilebilir bir AP açar. Bağlantı panelinde TCP/IP modunu seçip adresi girdikten sonra **BAĞLAN**'a basın. Nagle algoritması kapatılır; küçük paketler beklemeden gider.
 
 ---
 
-## YOLO Nesne Tespiti
-
-### Model Hazırlama (bir kez)
-
-```bash
-pip install ultralytics
-yolo export model=yolov8n.pt format=onnx opset=12
-cp yolov8n.onnx assets/
-```
-
-> `opset=12` geniş uyumluluk sağlar.
-
-### Pipeline
+## Kamera ve Nesne Tespiti
 
 ```
-RGBA frame
+RGBA kare (nokhwa)
     │
-    ▼ RGBA → RGB dönüşümü
-    │
-    ▼ Letterbox resize (640×640, gri padding #727272)
-    │
-    ▼ HWC → CHW, normalize [0,255] → [0.0,1.0]
-    │
-    ▼ ort ONNX inference (shape: [1,3,640,640])
-    │
-    ▼ Çıktı [1,84,8400]: xywh + 80 class score
-    │
-    ▼ Confidence filtrele (varsayılan: 0.50)
-    │
-    ▼ Koordinatları orijinal boyuta geri ölçekle (letterbox ters dönüşüm)
-    │
-    ▼ NMS (IoU threshold: 0.45)
-    │
-    ▼ imageproc ile bbox çizimi (OpenCV yok)
+    ▼ RGB'ye çevir
+    ▼ usls YOLO26 çıkarımı (640×640, uçtan uca NMS)
+    ▼ Güven eşiği 0.50
+    ▼ imageproc ile bbox + etiket çizimi
+    ▼ iced image::Handle → ekran
 ```
 
-**80 COCO sınıfı** desteklenir: person, car, bicycle, dog, cat…
+Tespit hattı ayrı bir thread'de, saniyede en fazla ~3 kez çalışır; kapalıyken uyur. Kutular her kareye çizildiği için görüntü akıcı kalırken etiketler düzenli güncellenir.
 
 ---
 
-## Faz 2: GPS Harita (Planlandı)
+## GPS Harita
 
-Slint `maps` örneği referans alınarak OSM tile tabanlı harita entegrasyonu:
+`▶ GPS Başlat` düğmesi `0x04 SetGpsEnable` paketiyle robotun periyodik konum yayınını açar. Gelen `0x14` yanıtları haritada işaretçiye dönüşür; ilk konum geldiğinde harita robotun üstüne ortalanır.
 
-- **Tile sistemi:** `BTreeMap<TileCoord, slint::Image>` — yüklü / yükleniyor ayrımı
-- **Async tile fetch:** `tokio::spawn` + `reqwest::Client`
-  - URL: `https://tile.openstreetmap.org/{z}/{x}/{y}.png`
-- **Görüntü decode:** `tokio::task::spawn_blocking` içinde `image::load_from_memory()`
-- **Slint render:** `Flickable` + `Image` grid, `VecModel<Tile>` binding
-- **Robot marker:** GPS `lat/lon` → tile piksel koordinatına çevrilip `Image` üstünde konumlandırılır
-- **Veri kaynağı:** Protokol `0x14 GetGps` yanıtı → `RobotResponse::Gps { lat, lon }` (Faz 1'de altyapı hazır)
+- Tile kaynağı: `https://tile.openstreetmap.org/{z}/{x}/{y}.png`
+- Tile'lar tek bir `Canvas` üzerine çizilir; sürükleyerek kaydırma, tekerlek veya alt çubukla zoom (1–19)
+- Görünür alanın dışındaki tile'lar bellekten düşürülür
 
 ---
 
 ## Geliştirici Notları
 
-### Yeni Slint State Ekleme
+### Yeni bir kontrol eklemek
 
-State'ler `crates/app/ui/state.slint` dosyasındaki `AppState` global'ine eklenir.
-Rust tarafında `AppState::get(&ui).set_xxx(value)` ile güncellenir (her zaman Slint event loop'undan çağrılmalı).
+1. `message.rs` → `Message` enum'una bir varyant ekle (geçmiş zaman adlandırma).
+2. `update.rs` → varyantı işle; I/O varsa `Task::perform` ile arka plana at.
+3. `view/…` → ilgili panele widget'ı koy; buton/alan/seçicilerde `CONTROL_HEIGHT` kullan.
 
-### Yeni Paket Türü Ekleme
+### Yeni bir paket türü eklemek
 
 1. `crates/protocol/src/types.rs` → `Command` enum'una kod ekle
-2. `crates/protocol/src/packet.rs` → paket fonksiyonu yaz + birim test ekle
-3. `crates/transport/src/framing.rs` → `parse_response()` match kolunu ekle
-4. `crates/app/src/bridge.rs` → `RobotEvent::Packet` match'ine UI güncellemesi ekle
+2. `crates/protocol/src/packet.rs` → paket fonksiyonu + birim test
+3. `crates/protocol/src/packet.rs::parse_response` → yanıt kolu
+4. `crates/app/src/update.rs` → `apply_robot_event` içinde UI güncellemesi
 
-### Birim Testleri
+### Testler
 
 ```bash
 cargo test -p protocol   # Paket yapısı, Fletcher-16, reverse flag
 cargo test -p control    # Joystick ölü bölge, klavye kombinasyonları
 cargo test -p transport  # Framing parser
-cargo test               # Tüm workspace
+cargo test --workspace --exclude app
 ```
+
+---
+
+## Slint Sürümü
+
+Arayüzün ilk hâli Slint ile yazılmıştı. O sürümün tamamı **`legacy/slint-ui`** branch'inde duruyor:
+
+```bash
+git checkout legacy/slint-ui
+```
+
+`main` üzerinde yalnızca iced sürümü bulunur; `protocol`, `transport`, `control` ve `vision` crate'leri iki sürümde de aynıdır.
 
 ---
 
@@ -394,8 +363,8 @@ MIT
 
 ## Referanslar
 
-- [Alfred Weirich — Rust + ORT + ONNX + YOLO (3 Bölüm)](https://medium.com/@alfred.weirich/rust-ort-onnx-real-time-yolo-on-a-live-webcam-part-1-b6edfb50bf9b)
-- [Slint UI Framework](https://slint.dev)
-- [Slint Maps Örneği — OSM tile + async](https://github.com/slint-ui/slint/blob/master/examples/maps/main.rs)
-- [han-minhee/yolo-rust-ort](https://github.com/han-minhee/yolo-rust-ort)
-- [nokhwa — Pure Rust kamera kütüphanesi](https://github.com/l1npengtul/nokhwa)
+- [iced — Rust GUI kütüphanesi](https://iced.rs)
+- [Material Design 3](https://m3.material.io/)
+- [usls — Rust görü modeli çalıştırma](https://github.com/jamjamjon/usls)
+- [nokhwa — saf Rust kamera kütüphanesi](https://github.com/l1npengtul/nokhwa)
+- [OpenStreetMap](https://www.openstreetmap.org)
