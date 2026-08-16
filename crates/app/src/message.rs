@@ -106,4 +106,7 @@ pub enum Message {
 
     // ── Robot olayları (transport aboneliği) ────────────
     Robot(RobotEvent),
+
+    /// Pencere kapatma isteği — kapanmadan önce robot durdurulur.
+    CloseRequested,
 }

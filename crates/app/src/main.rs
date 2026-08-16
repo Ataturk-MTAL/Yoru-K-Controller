@@ -51,6 +51,9 @@ fn main() -> iced::Result {
         .window(window::Settings {
             size: WINDOW_SIZE,
             min_size: Some(MIN_WINDOW_SIZE),
+            // Kapatma isteğini kendimiz karşılıyoruz: çıkmadan önce robota
+            // STOP gitmeli, yoksa motor son hızında kalır.
+            exit_on_close_request: false,
             ..window::Settings::default()
         })
         .font(include_bytes!("../assets/fonts/Saira-Regular.ttf").as_slice())
@@ -80,6 +83,7 @@ fn subscription(app: &App) -> Subscription<Message> {
         backend::events().map(Message::Robot),
         camera::updates().map(Message::Camera),
         hotkeys(),
+        window::close_requests().map(|_id| Message::CloseRequested),
     ];
 
     // Joystick sürüklenirken fare bırakması canvas'a ulaşmayabilir: imleç

@@ -353,6 +353,17 @@ pub fn update(app: &mut App, message: Message) -> Task<Message> {
             Task::none()
         }
 
+        // Pencere kapanırken robot son hızında kalmamalı: STOP + (0,0) hız
+        // paketi gidip periyodik gönderim durduktan sonra çıkılır.
+        Message::CloseRequested => {
+            let packet = simple_packet(Command::SetStop);
+            info!(cmd = "DURDUR", pkt = ?packet, "Kapanış: motor durdurma komutu gönderiliyor");
+            app.backend.send(packet);
+            stop_motor(app);
+            app.camera.stop();
+            iced::exit()
+        }
+
         // ── Robot olayları ──────────────────────────────
         Message::Robot(event) => {
             let first_fix = apply_robot_event(app, event);

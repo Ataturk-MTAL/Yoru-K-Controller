@@ -3,8 +3,12 @@
 Bu belge, Yörü-K robot kontrolcüsünün ESP32 ile haberleşmesinde kullandığı ikili
 (binary) iletişim protokolünü kapsamlı biçimde açıklar.
 
-Referans uygulamalar: `crates/protocol/src/packet.rs` (Rust) ve
-`core/protocol_controller.py` (Python/PySide6, referans kaynak).
+Geçerli uygulama: `crates/protocol/src/packet.rs` (paket üretimi/ayrıştırma) ve
+`crates/transport/src/framing.rs` (akış çerçeveleme).
+
+Protokolün ilk hâli bu depoda bulunmayan bir Python/PySide6 uygulamasında
+(`core/protocol_controller.py`) tanımlanmıştı; aşağıdaki bazı bölümler o
+sürümle farkları belirtir.
 
 ---
 
@@ -130,6 +134,7 @@ checksum = sum(data) & 0xFF
 | `0x01` | `SetSpeed` | TX | 7 | Sol + sağ motor hız paketi (v2.3) |
 | `0x02` | `SetLight` | TX | 1 | Işık aç / kapat |
 | `0x03` | `SetBrake` | TX | 1 | Fren aç / kapat |
+| `0x04` | `SetGpsEnable` | TX | 1 | GPS yayınını başlat / durdur |
 
 ### 3.2 START Paketi (`0xFF`)
 
@@ -188,6 +193,27 @@ AA 03 01 [on] [CK2] [CK1]
 ```
 
 `DATA[0]`: `0x01` = fren aktif, `0x00` = fren pasif.
+
+### 3.7 GPS_ENABLE Paketi (`0x04`)
+
+Robotun periyodik GPS yayınını açar veya kapatır. Açıkken robot, sorgu
+beklemeden `0x14` yanıtlarını kendiliğinden gönderir.
+
+```
+AA 04 01 [on] [CK2] [CK1]
+```
+
+| Bayt | Değer | Anlam |
+|---|---|---|
+| `DATA[0]` | `0x01` | GPS yayınını başlat |
+| `DATA[0]` | `0x00` | GPS yayınını durdur |
+
+**Örnek** — yayını durdurma paketi (uygulamadan alınmış gerçek bayt dizisi):
+```
+AA 04 01 00 0E 05
+```
+
+Rust uygulaması (`crates/protocol/src/packet.rs`): `gps_enable_packet(on: bool)`
 
 ---
 
@@ -339,30 +365,33 @@ let dir = |v: i8| if v >= 0 { 0x46u8 } else { 0x42u8 };
 
 | Parametre | Değer | Açıklama |
 |---|---|---|
-| Periyodik hız gönderimi | **50 ms** (20 Hz) | Joystick hızı, yalnızca motor çalışıyorken |
-| Durum sorgulama | **500 ms** | `GetStatus` her yarım saniyede bir |
-| Mesaj kuyruğu işleme | **5 ms** (200 Hz) | Kuyruktan bir mesaj al ve gönder |
+| Periyodik hız gönderimi | **10–50 ms**, varsayılan **30 ms** | Yalnızca motor çalışıyorken; aralık arayüzden seçilir |
+| Durum sorgulama | **yok** | Uygulama `GetStatus` göndermez; robot kendiliğinden `0x10` yanıtı yollarsa işlenir |
+| GPS yayını | robot tarafında | `0x04` ile açılır, periyodu robot belirler |
 
-### 7.2 Hysteresis Filtresi (Paket Spam Önleme)
+### 7.2 Sürekli Gönderim (Hysteresis Yok)
 
-Periyodik göndericisi, değerler yeterince değişmemişse paketi atlar:
+Periyodik gönderici, hız değişmemiş olsa bile **her döngüde** paket yollar.
+Bu bilinçli: ESP32 tarafındaki bağlantı zaman aşımının tetiklenmemesi buna
+bağlı. Sessiz kalınan her aralık, robotun bağlantıyı kopmuş sayması riskidir.
 
-```
-|Δsol| > 2  VEYA  |Δsağ| > 2  VEYA  vites_değişti
-    → Paket oluştur ve gönder
-    aksi hâlde → atla
-```
-
-Özel durum: Her iki hız da 0 ve önceki gönderim 0 değilse yine de gönder
-(tam durma garantisi).
-
-Rust uygulaması (`crates/app/src/bridge.rs`):
+Rust uygulaması (`crates/app/src/backend.rs`):
 ```rust
-if diff_l > 2 || diff_r > 2 || gear != prev_gear {
-    let pkt = speed_packet(speeds.left, speeds.right, gear, rev_l, rev_r);
-    state.connection.lock().unwrap().send(pkt);
+let interval = backend.send_interval_ms.load(Ordering::Relaxed) as u64;
+thread::sleep(Duration::from_millis(interval.max(MIN_INTERVAL_MS)));
+
+if !backend.motor_running.load(Ordering::Relaxed) {
+    continue;
 }
+
+let packet = backend.speed_packet_now(left, right);
+backend.send(packet);
 ```
+
+> **Not:** Protokolün daha eski Python/PySide6 uygulamasında `|Δhız| ≤ 2`
+> değişimlerini atlayan bir hysteresis filtresi vardı. Rust uygulamasında
+> yoktur — paket trafiği azalsın diye hızın sabit kaldığı anlarda susmak,
+> bağlantı denetimini zayıflatıyordu.
 
 ### 7.3 Mesaj Önceliği
 
@@ -414,12 +443,19 @@ pub fn try_parse_packet(buf: &mut Vec<u8>) -> Option<Vec<u8>> {
         let pkt = buf[..total].to_vec();
         let expected = protocol::fletcher16(&pkt[1..total-2]);
         let actual   = [pkt[total-2], pkt[total-1]];
-        buf.drain(..total);
-        if expected == actual { return Some(pkt); }
-        // Checksum hatalı → bir sonraki 0xAA'ya geç
+        if expected == actual {
+            buf.drain(..total);
+            return Some(pkt);
+        }
+        buf.drain(..1); // bozuk → yalnızca ilk baytı at, sonraki 0xAA'ya geç
     }
 }
 ```
+
+> **Neden yalnızca tek bayt?** Checksum tutmuyorsa o `0xAA` gerçek bir paket
+> başlangıcı olmayabilir; gürültü ise `LEN` alanı da çöp okunmuştur. `total`
+> kadar atmak, hemen ardından gelen **geçerli** bir paketi de yutar. Bu davranış
+> `test_sahte_baslangic_gecerli_paketi_yutmaz` testiyle korunuyor.
 
 ### 8.2 Buffer Yönetimi
 
@@ -536,9 +572,15 @@ AA 14 08 79 E0 24 42 D1 F1 E7 41 [CK2] [CK1]
 
 ### Checksum Hatası
 
-`try_parse_packet()` checksum uyuşmazlığında paketi sessizce atar ve buffer'da
-bir sonraki `0xAA` konumundan devam eder. Üst katmana hata iletilmez; kayıp
-paket bir sonraki periyodik sorguda (500ms) telafi edilir.
+`try_parse_packet()` checksum uyuşmazlığında ilk baytı atar ve buffer'da bir
+sonraki `0xAA` konumundan devam eder. Üst katmana hata iletilmez.
+
+Kayıp paketin telafisi yöne göre değişir:
+
+- **Kontrolcü → robot:** hız paketleri sürekli akar (§7.2), bir sonraki
+  periyotta yeni değer gider.
+- **Robot → kontrolcü:** uygulama sorgu göndermediği için kayıp bir yanıt
+  yeniden istenmez; bir sonraki kendiliğinden yayınla (örn. GPS) tazelenir.
 
 ### Bağlantı Hatası
 
@@ -551,14 +593,22 @@ paket bir sonraki periyodik sorguda (500ms) telafi edilir.
 
 ### Temiz Kapanış Sırası
 
+Pencere kapatma isteği yakalanır (`exit_on_close_request: false`), robot
+durdurulur, **sonra** çıkılır:
+
 ```
-1. Periyodik send timer durdur
-2. Durum sorgu timer durdur
-3. STOP komutu gönder (yüksek öncelikli)
-4. 100ms bekle (komutun iletilebilmesi için)
-5. Port / socket kapat
-6. Worker thread'leri sonlandır (2sn timeout)
+1. Kapatma isteği → Message::CloseRequested
+2. STOP komutu gönder            (AA 00 00 00 00)
+3. Son (0, 0) hız paketi gönder  (periyodik gönderim durduğu için gerekli)
+4. motor_running = false → periyodik gönderici susar
+5. Kamera thread'i durdurulur (donanım serbest)
+6. iced::exit() → transport kanalları drop olur, worker thread'ler çıkar
 ```
+
+> **Uyarı:** Bu sıra atlanırsa robot son aldığı hız değerinde kalır ve ancak
+> kendi bağlantı zaman aşımıyla durur. Uygulama beklenmedik şekilde sonlanırsa
+> (kill, panik, güç kesintisi) bu güvence yoktur — güvenlik durdurması robot
+> tarafındaki zaman aşımına düşer.
 
 ---
 
@@ -569,9 +619,9 @@ paket bir sonraki periyodik sorguda (500ms) telafi edilir.
 | v1.0 | Temel START/STOP/SPEED |
 | v2.0 | LEN alanı eklendi |
 | v2.3 | Hız paketine yön bayrakları (`'L'`/`'R'`/`'F'`/`'B'`) ve `LEN=7` |
-| Faz 2 | GPS sorgulama (`0x14`) etkinleştirilecek |
+| v2.4 | GPS etkin: `0x04 SetGpsEnable` komutu ve `0x14` yanıtı kullanımda |
 
 ---
 
-*Bu belge `core/protocol_controller.py` ve `crates/protocol/src/packet.rs` kaynak kodundan
+*Bu belge `crates/protocol/src/packet.rs` ve `crates/transport/src/framing.rs` kaynak kodundan
 türetilmiştir ve ikisi arasında birebir uyum sağlayacak şekilde yazılmıştır.*

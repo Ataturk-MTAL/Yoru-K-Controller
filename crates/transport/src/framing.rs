@@ -36,15 +36,16 @@ pub fn try_parse_packet(buf: &mut Vec<u8>) -> Option<Vec<u8>> {
         let expected = fletcher16(&pkt[1..total - 2]);
         let actual = [pkt[total - 2], pkt[total - 1]];
 
-        buf.drain(..total);
-
         if expected == actual {
+            buf.drain(..total);
             return Some(pkt);
         }
-        // Checksum hatalı → bir sonraki AA'yı ara (ilk baytı at)
-        if buf.is_empty() {
-            return None;
-        }
+
+        // Checksum tutmadı: bu 0xAA gerçek bir paket başlangıcı olmayabilir —
+        // gürültü baytı olabilir, o hâlde LEN alanı da çöp okunmuştur. `total`
+        // kadar atmak, hemen ardından gelen GEÇERLİ bir paketi de yutar.
+        // Yalnızca ilk bayt atılır, bir sonraki 0xAA'dan devam edilir.
+        buf.drain(..1);
     }
 }
 
@@ -91,6 +92,27 @@ mod tests {
         let mut buf = pkt[..3].to_vec(); // yarım paket
         let parsed = try_parse_packet(&mut buf);
         assert!(parsed.is_none(), "Yarım paket None dönmeli");
+    }
+
+    #[test]
+    fn test_sahte_baslangic_gecerli_paketi_yutmaz() {
+        // Gürültü olarak gelen bir 0xAA, LEN alanını da çöp okutur: burada
+        // sahte çerçeve LEN=5 diyor, yani 10 bayt kaplıyormuş gibi görünüyor
+        // ve hemen ardındaki gerçek paketin üstüne biniyor.
+        //
+        // Checksum tutmayınca tüm sahte çerçeve atılırsa gerçek paket de
+        // silinir. Doğru davranış tek bayt atıp bir sonraki 0xAA'dan devam.
+        let real = simple_packet(Command::SetStart);
+        let mut buf = vec![START_BYTE, 0x99, 0x05];
+        buf.extend_from_slice(&real);
+        buf.extend_from_slice(&[0x00, 0x00]); // sahte çerçeveyi tamamlayan gürültü
+
+        let parsed = try_parse_packet(&mut buf);
+        assert_eq!(
+            parsed.as_deref(),
+            Some(real.as_slice()),
+            "sahte 0xAA sonrasındaki geçerli paket yutuldu"
+        );
     }
 
     #[test]
