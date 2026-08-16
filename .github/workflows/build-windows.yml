@@ -107,7 +107,7 @@ jobs:
           cp target/release/app AppDir/usr/bin/yoru-k-controller
 
           # SVG → 256x256 PNG ikon
-          rsvg-convert -w 256 -h 256 "crates/app/ui/assets/Yörü-K-1.svg" \
+          rsvg-convert -w 256 -h 256 "crates/app/assets/Yörü-K-1.svg" \
             -o AppDir/usr/share/icons/hicolor/256x256/apps/yoru-k-controller.png
 
           # .desktop — heredoc YAML'ı bozduğundan printf kullan

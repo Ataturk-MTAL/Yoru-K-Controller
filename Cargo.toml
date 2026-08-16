@@ -1,13 +1,10 @@
 [workspace]
-members = ["crates/protocol", "crates/transport", "crates/control", "crates/vision", "crates/app", "crates/app-iced"]
+members = ["crates/protocol", "crates/transport", "crates/control", "crates/vision", "crates/app"]
 resolver = "2"
 
 [workspace.dependencies]
-# UI
-slint       = { version = "1.15.1", features = ["renderer-skia", "renderer-software"] }
-slint-build = "1.15.1"
-
-# UI (iced portu — crates/app-iced)
+# UI — arayüz iced ile yazılıyor.
+# Slint sürümü `legacy/slint-ui` branch'inde duruyor.
 # image: kamera karesi + OSM tile'ları canvas'a çizmek için gerekli
 iced = { version = "0.14", features = ["tokio", "canvas", "image"] }
 

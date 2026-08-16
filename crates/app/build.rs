@@ -1,13 +1,16 @@
-fn main() {
-    let config = slint_build::CompilerConfiguration::new()
-        .with_style("fluent-dark".into());
-    slint_build::compile_with_config("ui/app.slint", config)
-        .expect("Slint derleme hatası");
+//! Windows kaynak gömme.
+//!
+//! Slint sürümündeki `build.rs` hem `.slint` derlemesini hem ikon gömmeyi
+//! yapıyordu. iced'de derlenecek bir UI dosyası yok; geriye yalnızca Windows
+//! çalıştırılabilirine ikon gömme kısmı kalıyor.
 
+fn main() {
     #[cfg(windows)]
     {
-        let mut res = winresource::WindowsResource::new();
-        res.set_icon("assets/icon.ico");
-        res.compile().expect("Windows kaynak dosyası gömülemedi");
+        let mut resource = winresource::WindowsResource::new();
+        resource.set_icon("assets/icon.ico");
+        resource
+            .compile()
+            .expect("Windows kaynak dosyası gömülemedi");
     }
 }
