@@ -148,8 +148,12 @@ LEN = 0, DATA alanı boş.
 
 **Örnek:**
 ```
-AA FF 00 FB 00
+AA FF 00 00 00
 ```
+
+> `fletcher16([0xFF, 0x00])` = `[0x00, 0x00]` — çünkü `255 % 255 = 0`, ardından
+> `sum2 = (0 + 0) % 255 = 0`. Çalışan uygulamadan alınan bayt dizisi:
+> `pkt=[170, 255, 0, 0, 0]`.
 
 ### 3.3 STOP Paketi (`0x00`)
 
@@ -514,13 +518,18 @@ AA 01 07 01 4C 46 64 52 46 64 [CK2] [CK1]
                            (bayt [3] = 01 = vites 1)
 ```
 
-Checksum: `fletcher16([01, 07, 01, 4C, 46, 64, 52, 46, 64])` = `[94, B3]` (yaklaşık)
+Checksum: `fletcher16([01, 07, 01, 4C, 46, 64, 52, 46, 64])` = `[EA, FC]`
+
+Tam paket:
+```
+AA 01 07 01 4C 46 64 52 46 64 EA FC
+```
 
 ### Sol Dönüş, V2
 
 ```
 Sol: −50  Sağ: +50  Vites: 2
-AA 01 07 02 4C 42 32 52 46 32 [CK2] [CK1]
+AA 01 07 02 4C 42 32 52 46 32 E2 95
              ^^    ^^    ^^
              |     |     └── Sağ yön: 'F'
              |     └──────── Sol yön: 'B' (geri)
@@ -533,7 +542,7 @@ AA 01 07 02 4C 42 32 52 46 32 [CK2] [CK1]
 AA FF 00 [CK2] [CK1]
 ```
 
-`fletcher16([FF, 00])` = `[FB, 00]` → `AA FF 00 FB 00`
+`fletcher16([FF, 00])` = `[00, 00]` → `AA FF 00 00 00`
 
 ### STOP Komutu
 
@@ -549,7 +558,7 @@ AA 00 00 [CK2] [CK1]
 AA 10 00 [CK2] [CK1]
 ```
 
-`fletcher16([10, 00])` → `AA 10 00 10 10`
+`fletcher16([10, 00])` = `[20, 10]` → `AA 10 00 20 10`
 
 ### Durum Yanıtı — Motor Çalışıyor
 

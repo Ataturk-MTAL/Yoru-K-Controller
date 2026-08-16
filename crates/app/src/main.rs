@@ -31,7 +31,9 @@ fn main() -> iced::Result {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::from_default_env()
-                .add_directive("app_iced=debug".parse().expect("geçersiz log filtresi")),
+                // Hedef, crate adıyla aynı olmalı: `app-iced` → `app` yeniden
+                // adlandırmasından sonra eski hedef hiçbir satırı eşleştirmiyordu.
+                .add_directive("app=debug".parse().expect("geçersiz log filtresi")),
         )
         .init();
 
