@@ -3,11 +3,20 @@
 //! iced'de yeniden kullanılabilir bileşen = düz fonksiyon. `Component` trait'i
 //! 0.13'te kullanımdan kaldırıldı (gizli state tek doğruluk kaynağını bozuyor).
 
-use iced::widget::{button, container, text, Space, Text};
-use iced::{Background, Border, Color, Element, Theme};
+use iced::widget::{button, container, row, text, Space, Text};
+use iced::{Alignment, Background, Border, Color, Element, Theme};
 
 use crate::styles;
-use crate::theme::{self, CONTROL_HEIGHT, FONT_LABEL, FONT_SM, ICON_BUTTON, RADIUS_FULL};
+use crate::theme::{
+    self, CONTROL_HEIGHT, FONT_LABEL, FONT_SM, ICON_BUTTON, RADIUS_FULL, SPACE_MD, SPACE_SM,
+};
+
+/// Durum noktası çapı.
+///
+/// Aynı desen (nokta + etiket) yedi yerde tekrarlanıyordu ve çap yere göre
+/// 8 ile 10 arasında geziniyordu; aynı satırda iki farklı çap yan yana
+/// düşünce nokta boyutu bilgi taşıyormuş gibi görünüyordu. Tek değer burada.
+const STATUS_DOT: f32 = SPACE_MD;
 
 /// Renkli durum noktası — bağlantı / motor / sensör göstergeleri.
 pub fn dot<'a, Message: 'a>(color: Color, size: f32) -> Element<'a, Message> {
@@ -73,4 +82,39 @@ pub fn v_separator<'a, Message: 'a>(height: f32) -> Element<'a, Message> {
         .height(height)
         .style(styles::hairline)
         .into()
+}
+
+/// Nokta + etiket satırı — durum çubuğu ve bağlantı panelindeki göstergeler.
+///
+/// Nokta çapı ve noktayla etiket arasındaki boşluk burada sabit: yedi çağrı
+/// yerinde ayrı ayrı yazıldığında ikisi de kaymıştı. Renk ve metin stili
+/// dışarıdan geliyor çünkü hangi rolün geçerli olduğunu (online/offline,
+/// uyarı, bekliyor) yalnızca çağıran biliyor.
+pub fn status_chip<'a, Message: 'a>(
+    color: Color,
+    label: String,
+    size: f32,
+    style: fn(&Theme) -> text::Style,
+) -> Element<'a, Message> {
+    row![dot(color, STATUS_DOT), text(label).size(size).style(style),]
+        .spacing(SPACE_SM)
+        .align_y(Alignment::Center)
+        .into()
+}
+
+/// "Yörü-K bağlı değil" rozeti — kamera ve harita görünümlerinin sol üstünde.
+///
+/// İki görünümde harfi harfine aynı fonksiyon iki kez yazılıydı. Metin rengi
+/// bilerek verilmiyor: `styles::error_badge` zaten `text_color` olarak
+/// `on_error_container` veriyor ve container'ın metin rengi çocuklara
+/// devroluyor. Çağrı yerlerindeki `styles::text_error` o değeri eziyor ve
+/// rozetin kendi zeminine göre seçilmiş kontrastını bozuyordu.
+pub fn connection_warning<'a, Message: 'a>() -> Element<'a, Message> {
+    container(
+        container(text("Yörü-K bağlı değil").size(FONT_SM))
+            .padding([SPACE_SM, SPACE_MD])
+            .style(styles::error_badge),
+    )
+    .padding(SPACE_MD)
+    .into()
 }

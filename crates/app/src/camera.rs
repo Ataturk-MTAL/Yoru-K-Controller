@@ -37,6 +37,13 @@ pub enum CameraUpdate {
     Error(String),
     Stopped,
     DetectionCount(usize),
+    /// Tespit hattı bu oturumda hiç çalışmayacak (model yüklenemedi).
+    ///
+    /// `Error`'dan ayrı bir varyant: kamera sağlam, ölen yalnızca tespit
+    /// işçisi. İşçi uygulama boyunca bir kez doğduğu için bu durum kalıcıdır —
+    /// UI'ın "🔍 Algıla" düğmesini kilitlemesi gerekiyor, kamerayı kapatması
+    /// değil.
+    DetectionUnavailable(String),
 }
 
 /// `Subscription` builder'ı fn pointer olmak zorunda — alıcı uç burada park eder.
@@ -217,7 +224,15 @@ fn spawn_detection_worker(
             let mut detector = match YoloDetector::new(model_path) {
                 Ok(detector) => detector,
                 Err(error) => {
+                    // İşçi burada ölüyor ve bir daha doğmuyor. Bunu UI'a
+                    // bildirmezsek "🔍 Algıla" düğmesi basılabilir kalıyor,
+                    // basılınca da hiçbir şey olmuyor — kullanıcı için sessiz
+                    // arıza. stderr satırı da kalıyor: hatanın tam metni
+                    // düğmenin yanına sığmaz.
                     eprintln!("Detection model yüklenemedi: {error}");
+                    let _ = ui_tx.blocking_send(CameraUpdate::DetectionUnavailable(
+                        "Tespit modeli yüklenemedi".into(),
+                    ));
                     return;
                 }
             };

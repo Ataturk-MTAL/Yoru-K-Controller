@@ -10,8 +10,8 @@ use iced::{Alignment, Background, Border, Element, Fill, FillPortion, Theme};
 use crate::message::Message;
 use crate::state::App;
 use crate::styles;
-use crate::theme::{Tokens, FONT_LG, FONT_SM, RADIUS_SM, SPACE_LG, SPACE_MD, SPACE_SM};
-use crate::view::widgets::{dot, numeric, section_title};
+use crate::theme::{Tokens, FONT_SM, RADIUS_SM, SPACE_LG, SPACE_MD, SPACE_SM};
+use crate::view::widgets::{numeric, section_title, status_chip};
 
 /// Çubuk yüksekliği (Slint: 12px).
 const BAR_HEIGHT: f32 = 12.0;
@@ -170,22 +170,30 @@ fn gear_row(app: &App) -> Element<'_, Message> {
 
     row![
         text("Vites:").size(FONT_SM).style(styles::text_secondary),
-        text!("V{}", app.gear)
-            .size(FONT_LG)
-            .style(styles::text_warning),
+        // Aynı vites değeri `motor_control` vites satırında `numeric`'in kendi
+        // puntosuyla (FONT_SM, mono) ve nötr tonda yazılıyor. Burada 14 px +
+        // amber ile yazılınca aynı okuma iki ayrı bilgi gibi duruyordu; ayrıca
+        // amber yanındaki gerçek uyarı göstergeleriyle aynı dili konuşuyordu —
+        // vites bir uyarı değil, sıradan bir ayar (bkz. `motor_control`).
+        numeric(format!("V{}", app.gear)).style(styles::text_primary),
         Space::new().width(Fill),
-        dot(status_color, 10.0),
-        text(if app.motor_running {
-            "Çalışıyor"
-        } else {
-            "Durdu"
-        })
-        .size(FONT_SM)
-        .style(if app.motor_running {
-            styles::text_success
-        } else {
-            styles::text_tertiary
-        }),
+        // Nokta çapı ve etiket boşluğu ortak yardımcıda sabit: burada elle
+        // 10 px veriliyordu, durum çubuğundaki 8 px'lik aynı rol noktalarından
+        // ayrışınca çap bilgi taşıyormuş gibi görünüyordu.
+        status_chip(
+            status_color,
+            if app.motor_running {
+                "Çalışıyor".to_string()
+            } else {
+                "Durdu".to_string()
+            },
+            FONT_SM,
+            if app.motor_running {
+                styles::text_success
+            } else {
+                styles::text_tertiary
+            },
+        ),
     ]
     .spacing(SPACE_MD)
     .align_y(Alignment::Center)

@@ -10,16 +10,42 @@ use iced::{Color, Point, Rectangle, Renderer, Size, Theme};
 
 use crate::message::Message;
 use crate::state::Joystick;
-use crate::theme::Tokens;
+use crate::theme::{Tokens, SPACE_LG, SPACE_MD};
 
 /// Halka ile bileşen kenarı arasındaki boşluk (Slint: `min(...) - 20px`).
+///
+/// Slint'ten geldiği gibi **çap** ölçeğinde tanımlı; `ring()` yarıçap hesabı
+/// yaptığı için orada yarısı düşülür, yani kenarda görünen boşluk 10 px.
 const RING_MARGIN: f32 = 20.0;
 /// Bilek çapı.
 const KNOB_SIZE: f32 = 56.0;
-/// Merkez noktası çapı.
-const CENTER_DOT: f32 = 8.0;
+/// Merkez noktası çapı — `widgets::STATUS_DOT` ile aynı ölçek.
+const CENTER_DOT: f32 = SPACE_MD;
+/// Bileğin üstündeki ışık noktasının çapı.
+///
+/// Merkez noktasından bir basamak büyük: ikisi tam sapmasız durumda üst üste
+/// gelir ve eşit çapta olsalar bilek işaretiyle halka merkezi tek nokta gibi
+/// okunuyordu.
+const KNOB_LIGHT: f32 = SPACE_LG;
 /// Tolerans bandı genişliği — halka çapının oranı (Slint: %16).
 const SNAP_BAND: f32 = 0.16;
+
+/// Canvas çizgi kalınlığı — halka, kılavuz ve bilek kenarlığı aynı ağırlıkta.
+///
+/// Üç çizim de aynı değeri kullanıyor: biri değişirse üçü değişmeli, yoksa
+/// hangi çizginin yapısal (halka) hangisinin yardımcı (kılavuz) olduğu
+/// kalınlıktan okunuyormuş gibi bir izlenim doğuyor — oysa o ayrımı alfa
+/// taşıyor.
+const LINE_WIDTH: f32 = 2.0;
+/// Bağlıyken halka kenarlığının opaklığı — halka bir durum göstergesi değil,
+/// yeşile tam doygunlukta boyanınca bileğin kendisiyle yarışıyordu.
+const RING_ALPHA: f32 = 0.5;
+/// Kılavuz çizgilerinin opaklığı.
+const GUIDE_ALPHA: f32 = 0.4;
+/// Tolerans bantlarının opaklığı — "burada kenetlenir" ipucu, çizim değil.
+const BAND_ALPHA: f32 = 0.08;
+/// Motor dururken bilek dolgusunun opaklığı (bkz. `knob_colors`).
+const KNOB_IDLE_ALPHA: f32 = 0.5;
 
 pub struct JoystickCanvas {
     pub joystick: Joystick,
@@ -67,7 +93,10 @@ impl JoystickCanvas {
     ///
     /// Motor çalışıyor / duruyor ayrımını artık dolgunun opaklığı taşıyor.
     fn knob_colors(&self, t: &Tokens) -> (Color, Color, Color) {
-        let translucent = |color: Color| Color { a: 0.5, ..color };
+        let translucent = |color: Color| Color {
+            a: KNOB_IDLE_ALPHA,
+            ..color
+        };
 
         match (self.joystick.dragging, self.connected, self.motor_running) {
             (true, true, _) => (t.success, t.success, Color::WHITE),
@@ -153,10 +182,10 @@ impl canvas::Program<Message> for JoystickCanvas {
         frame.stroke(
             &ring,
             Stroke::default()
-                .with_width(2.0)
+                .with_width(LINE_WIDTH)
                 .with_color(if self.connected {
                     Color {
-                        a: 0.5,
+                        a: RING_ALPHA,
                         ..t.success
                     }
                 } else {
@@ -166,7 +195,7 @@ impl canvas::Program<Message> for JoystickCanvas {
 
         // ── Tolerans bantları (eksen snap görseli) ──────
         let band = Color {
-            a: 0.08,
+            a: BAND_ALPHA,
             ..t.outline_variant
         };
         let diameter = max_r * 2.0;
@@ -191,8 +220,8 @@ impl canvas::Program<Message> for JoystickCanvas {
         });
         frame.stroke(
             &guides,
-            Stroke::default().with_width(2.0).with_color(Color {
-                a: 0.4,
+            Stroke::default().with_width(LINE_WIDTH).with_color(Color {
+                a: GUIDE_ALPHA,
                 ..t.outline
             }),
         );
@@ -211,9 +240,11 @@ impl canvas::Program<Message> for JoystickCanvas {
         frame.fill(&knob, knob_fill);
         frame.stroke(
             &knob,
-            Stroke::default().with_width(2.0).with_color(knob_border),
+            Stroke::default()
+                .with_width(LINE_WIDTH)
+                .with_color(knob_border),
         );
-        frame.fill(&Path::circle(knob_center, 6.0), light);
+        frame.fill(&Path::circle(knob_center, KNOB_LIGHT / 2.0), light);
 
         vec![frame.into_geometry()]
     }

@@ -103,6 +103,10 @@ pub struct Tokens {
     /// Yan panel gibi ikincil bölgeler.
     pub surface_container_low: Color,
     /// Kart, toolbar, durum çubuğu.
+    ///
+    /// Açık temada bu ton beyaz, yani `surface_container_low` yan panelinden
+    /// daha AÇIK: merdivenin bu basamağındaki ters yön bilinçli. M3 açık şemada
+    /// kartı "kağıt" gibi düşünür — kart panelden yükselir, panele gömülmez.
     pub surface_container: Color,
     /// Bir basamak yukarısı.
     pub surface_container_high: Color,
@@ -158,7 +162,22 @@ pub struct Tokens {
     pub sensor_offline: Color,
     pub sensor_warning: Color,
 
+    /// Modal karartması — arkadaki arayüzü pasifleştirmek için.
+    ///
+    /// Yalnızca modalın kendi karartma katmanı bunu kullanır; tema dışı içerik
+    /// (kamera karesi, harita tile'ı) üstündeki çipler `overlay` kullanır.
     pub scrim: Color,
+
+    /// Tema dışı içerik üstündeki çip zemini (kamera karesi, harita tile'ı).
+    ///
+    /// `scrim`'den ayrı bir rol: karartmanın işi arkayı geri plana atmak,
+    /// bunun işi ÜSTÜNDEKİ METNİ okutmak. Açık temada `scrim` 0.33 alfa —
+    /// parlak bir kamera karesinin üstünde çipin var olma sebebini
+    /// karşılamıyor. Bu yüzden `overlay` iki temada da koyu ve daha opak:
+    /// altındaki görüntü tema seçiminden bağımsız, dolayısıyla rol de öyle.
+    pub overlay: Color,
+    /// `overlay` üstündeki metin — iki temada da açık ton.
+    pub on_overlay: Color,
 }
 
 impl Tokens {
@@ -225,6 +244,9 @@ impl Tokens {
             sensor_warning: hex(0xf5b731),
 
             scrim: hexa(0x000000, 0.67),
+
+            overlay: hexa(0x000000, 0.72),
+            on_overlay: hex(0xf2f4f8),
         }
     }
 
@@ -240,7 +262,11 @@ impl Tokens {
             surface_container_low: hex(0xf0f1f5),
             surface_container: Color::WHITE,
             surface_container_high: hex(0xe6e8ee),
-            surface_container_highest: hex(0xf4f5f7),
+            // Merdiven yukarı doğru koyulaşmalı: eski değer (#f4f5f7) high'tan
+            // daha açıktı, yani "highest" adı yön değiştiriyordu. İki token da
+            // henüz hiçbir yerde kullanılmıyor — bu düzeltme görünen hiçbir
+            // yüzeyi değiştirmiyor, yalnızca merdivenin tanımını doğruluyor.
+            surface_container_highest: hex(0xd9dce4),
             surface_sunken: hex(0xedeef2),
 
             on_surface: hex(0x1a1c24),
@@ -270,7 +296,12 @@ impl Tokens {
 
             info: hex(0x106d94),
 
-            control: Color::WHITE,
+            // Nötr dolgu beyaz olamaz: `surface_container` da beyaz olduğu için
+            // toolbar'daki tema düğmesi ve modalın kapat butonu 1.00:1 ile
+            // zeminde kayboluyordu. Bu gri hem beyazdan (1.29:1) hem de yan
+            // panel tonu #f0f1f5'ten (1.14:1) ayrılıyor; `on_control` ile
+            // kontrastı 10.4:1, yani metin tarafında hiçbir şey feda edilmiyor.
+            control: hex(0xdfe3ea),
             on_control: hex(0x2c2f3a),
             control_disabled: hex(0xf0f1f5),
             on_control_disabled: hex(0xb0b3be),
@@ -286,6 +317,11 @@ impl Tokens {
             sensor_warning: hex(0x8a6200),
 
             scrim: hexa(0x000000, 0.33),
+
+            // Açık temada da koyu: altındaki kamera karesi / harita tile'ı
+            // temadan bağımsız, bu yüzden çip zemini tema ile açılmıyor.
+            overlay: hexa(0x000000, 0.72),
+            on_overlay: hex(0xf2f4f8),
         }
     }
 

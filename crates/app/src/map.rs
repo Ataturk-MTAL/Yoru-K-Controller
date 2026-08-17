@@ -43,6 +43,12 @@ pub struct MapState {
     pub tiles: BTreeMap<TileCoord, iced_image::Handle>,
     /// İndirilmesi istenmiş ama henüz gelmemiş tile'lar — çift istek olmasın.
     pending: HashSet<TileCoord>,
+    /// İndirilemeyen tile'lar — canvas oraya "yok" iskeleti çizer.
+    ///
+    /// Sadece çizim durumu; yeniden denemeyi engellemez. Tile yeniden
+    /// istendiğinde (`take_missing_tiles`) buradan düşer, yoksa bir kez patlayan
+    /// tile ömür boyu boş kalırdı.
+    failed: HashSet<TileCoord>,
 }
 
 impl Default for MapState {
@@ -54,6 +60,7 @@ impl Default for MapState {
             viewport: Size::new(800.0, 600.0),
             tiles: BTreeMap::new(),
             pending: HashSet::new(),
+            failed: HashSet::new(),
         };
         state.center_on(DEFAULT_LAT, DEFAULT_LON);
         state
@@ -90,6 +97,7 @@ impl MapState {
         // Zoom seviyesi değişince eski tile'lar geçersiz.
         self.tiles.clear();
         self.pending.clear();
+        self.failed.clear();
         self.clamp_to_world();
     }
 
@@ -144,6 +152,8 @@ impl MapState {
                 continue;
             }
             self.pending.insert(coord);
+            // Yeniden deniyoruz: artık "başarısız" değil, "yükleniyor".
+            self.failed.remove(&coord);
             missing.push(coord);
         }
         missing
@@ -152,6 +162,7 @@ impl MapState {
     /// İnen tile'ı yerleştirir.
     pub fn insert_tile(&mut self, coord: TileCoord, handle: iced_image::Handle) {
         self.pending.remove(&coord);
+        self.failed.remove(&coord);
         if coord.z == self.zoom {
             self.tiles.insert(coord, handle);
         }
@@ -160,6 +171,20 @@ impl MapState {
     /// İndirilemeyen tile'ı bekleyenlerden düşürür — sonraki denemeye açık kalır.
     pub fn drop_pending(&mut self, coord: TileCoord) {
         self.pending.remove(&coord);
+        self.failed.insert(coord);
+    }
+
+    /// Bu tile indirilemedi mi? (canvas iskeletini seçmek için)
+    pub fn is_failed(&self, coord: &TileCoord) -> bool {
+        self.failed.contains(coord)
+    }
+
+    /// Görünür çevrede indirilemeyen tile var mı? — "çevrimdışı" rozeti için.
+    ///
+    /// `prune` uzaktaki kayıtları düşürdüğü için küme yalnızca ekrana yakın
+    /// başarısızlıkları tutuyor: rozet ekranda gerçekten boşluk varken çıkar.
+    pub fn has_failures(&self) -> bool {
+        !self.failed.is_empty()
     }
 
     /// Görünür alandan uzaktaki tile'ları bellekten atar.
@@ -182,6 +207,7 @@ impl MapState {
 
         self.tiles.retain(|coord, _| keep(coord));
         self.pending.retain(keep);
+        self.failed.retain(keep);
     }
 
     /// Tile'ın ekrandaki dikdörtgeni.

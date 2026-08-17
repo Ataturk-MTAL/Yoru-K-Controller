@@ -75,6 +75,7 @@ pub fn update(app: &mut App, message: Message) -> Task<Message> {
                     .lock()
                     .unwrap()
                     .connect_serial(&port, BAUD_RATE);
+                app.status_text = format!("Bağlanıyor — {port}");
             } else {
                 let (Some(port), true) = (app.tcp_port_value(), app.tcp_host_valid()) else {
                     return Task::none();
@@ -86,13 +87,22 @@ pub fn update(app: &mut App, message: Message) -> Task<Message> {
                     .lock()
                     .unwrap()
                     .connect_tcp(&host, port);
+                app.status_text = format!("Bağlanıyor — {host}:{port}");
             }
+
+            // Erken dönüşlerden SONRA: gerçekten istek gitmediyse arayüz
+            // "bağlanıyor" demez. Eski hata da temizlenir, yoksa yeni denemenin
+            // sonucu bir öncekinin nedeniyle karışır.
+            app.connecting = true;
+            app.last_error = None;
             Task::none()
         }
 
         Message::DisconnectPressed => {
             info!(cmd = "BAĞLANTI_KES", "Bağlantı kesiliyor");
             app.backend.connection.lock().unwrap().disconnect();
+            app.connecting = false;
+            app.last_error = None;
             stop_motor(app);
             Task::none()
         }
@@ -275,7 +285,10 @@ pub fn update(app: &mut App, message: Message) -> Task<Message> {
                 "Kamera açılıyor"
             );
             app.camera_error.clear();
-            app.camera_running = true; // "başlıyor" durumu; Started olayı doğrular
+            // `camera_running` burada AÇILMIYOR: kamera henüz çalışmıyor,
+            // yalnızca açılıyor. Eskiden burada true yazılıyordu ve kamera hiç
+            // açılamasa bile arayüz kendini "çalışıyor" sanıyordu.
+            app.camera_starting = true;
             app.camera.start(choice.index);
             Task::none()
         }
@@ -286,11 +299,16 @@ pub fn update(app: &mut App, message: Message) -> Task<Message> {
             app.camera.set_detection(false);
             app.detection_enabled = false;
             app.detection_count = 0;
+            app.camera_starting = false;
             app.camera_running = false;
             app.camera_frame = None;
             app.camera_fps = 0;
             Task::none()
         }
+
+        // Tespit işçisi ölmüşse anahtar hiçbir şey yapmaz — durumu değiştirip
+        // "açık" göstermek, çalışan bir tespit varmış izlenimi verir.
+        Message::DetectionToggled if app.detection_error.is_some() => Task::none(),
 
         Message::DetectionToggled => {
             let enabled = !app.detection_enabled;
@@ -397,21 +415,33 @@ fn apply_camera_update(app: &mut App, update: CameraUpdate) {
         CameraUpdate::Frame(handle) => app.camera_frame = Some(handle),
         CameraUpdate::Fps(fps) => app.camera_fps = fps,
         CameraUpdate::Started => {
+            app.camera_starting = false;
             app.camera_running = true;
             app.camera_error.clear();
         }
         CameraUpdate::Error(message) => {
+            app.camera_starting = false;
             app.camera_running = false;
             app.camera_frame = None;
             app.camera_fps = 0;
             app.camera_error = message;
         }
         CameraUpdate::Stopped => {
+            app.camera_starting = false;
             app.camera_running = false;
             app.camera_frame = None;
             app.camera_fps = 0;
         }
         CameraUpdate::DetectionCount(count) => app.detection_count = count,
+
+        // Kalıcı durum: işçi bir daha doğmayacak. Anahtar kapatılır ve bir
+        // daha açılamaz (bkz. `Message::DetectionToggled` koruması).
+        CameraUpdate::DetectionUnavailable(reason) => {
+            app.detection_error = Some(reason);
+            app.detection_enabled = false;
+            app.detection_count = 0;
+            app.camera.set_detection(false);
+        }
     }
 }
 
@@ -459,19 +489,31 @@ fn apply_robot_event(app: &mut App, event: RobotEvent) -> bool {
             // Yeni bağlantı farklı bir cihaz olabilir — motor daima durur.
             stop_motor(app);
             app.connected = true;
+            app.connecting = false;
+            app.last_error = None;
             app.status_text = format!("Bağlı — {endpoint}");
             false
         }
 
+        // Nedeni `Error` kolu bir tur önce bıraktı; kullanıcıya kopmayı ve
+        // nedenini birlikte gösteriyoruz. Neden yoksa (kullanıcı kendisi
+        // kesti — `connection.rs:62` çıplak `Disconnected` yayar) düz metin.
         RobotEvent::Disconnected => {
             stop_motor(app);
             app.connected = false;
+            app.connecting = false;
             app.gps_active = false;
-            app.status_text = "Bağlantı kesildi".into();
+            app.status_text = match &app.last_error {
+                Some(reason) => format!("Bağlantı kesildi — {reason}"),
+                None => "Bağlantı kesildi".into(),
+            };
             false
         }
 
         RobotEvent::Error(message) => {
+            // Bağlanma denemesi sırasında gelen hata denemeyi bitirir.
+            app.connecting = false;
+            app.last_error = Some(message.clone());
             app.status_text = message;
             false
         }

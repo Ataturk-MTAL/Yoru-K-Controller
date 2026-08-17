@@ -10,9 +10,7 @@ use iced::{Alignment, Background, Element, Fill, Theme};
 
 use crate::message::{Message, Modal};
 use crate::styles;
-use crate::theme::{
-    Tokens, CONTROL_HEIGHT, FONT_LG, FONT_MD, FONT_SM, FONT_XL, SPACE_MD, SPACE_XL,
-};
+use crate::theme::{self, Tokens, CONTROL_HEIGHT, FONT_MD, FONT_SM, FONT_XL, SPACE_MD, SPACE_XL};
 use crate::view::widgets::separator;
 
 /// Katman genişliği (Slint pencere genişlikleri: 380px / 340px).
@@ -21,6 +19,9 @@ const PANEL_WIDTH: f32 = 380.0;
 const KEY_WIDTH: f32 = 96.0;
 /// Tuş kutusu yüksekliği.
 const KEY_HEIGHT: f32 = 28.0;
+/// Kapat butonu genişliği — yükseklik `CONTROL_HEIGHT`, dosyadaki diğer
+/// ölçüler gibi adlandırılmış sabitten gelsin diye burada.
+const CLOSE_BUTTON_WIDTH: f32 = 120.0;
 
 /// Klavye kısayolları — Slint listesine WASD satırları da eklendi.
 const SHORTCUTS: [(&str, &str); 9] = [
@@ -56,19 +57,26 @@ pub fn view(modal: Modal) -> Element<'static, Message> {
 
 fn about() -> Element<'static, Message> {
     let content = column![
+        // Modal başlığı — `shortcuts()` ile aynı rolde olduğu için aynı punto.
+        // İki katman aynı yerde, aynı çerçevede açılıyor; başlıkları farklı
+        // puntoda olunca ikisi ayrı önemdeymiş gibi okunuyordu.
         text("Yörü-K İKA Kontrol Sistemi")
             .size(FONT_XL)
             .style(styles::text_primary),
         text("v0.1.0").size(FONT_SM).style(styles::text_tertiary),
         separator(),
+        // Punto sırası bilgi sırasını izler: başlık (20) → gövde (14) →
+        // dipnot (12). Eskiden tek satırlık gövde 16 px ile altındaki
+        // paragraftan büyüktü; hiyerarşi tersine dönüyor, göz özeti değil
+        // künyeyi son okuyordu.
         text("Yörü-K diferansiyel sürüşlü İKA kontrol yazılımı")
-            .size(FONT_LG)
+            .size(FONT_MD)
             .style(styles::text_secondary),
         text(
             "Rust + iced + ONNX Runtime kullanarak Toroslar Atatürk MTAL \
              Yörü-K Teknoloji Takımı tarafından üretilmiştir."
         )
-        .size(FONT_MD)
+        .size(FONT_SM)
         .style(styles::text_tertiary),
         Space::new().height(SPACE_MD),
         close_button(),
@@ -80,8 +88,9 @@ fn about() -> Element<'static, Message> {
 }
 
 fn shortcuts() -> Element<'static, Message> {
+    // Başlık puntosu `about()` ile aynı: ikisi de modal başlığı rolünde.
     let mut content = column![text("Klavye Kısayolları")
-        .size(FONT_LG)
+        .size(FONT_XL)
         .style(styles::text_primary)]
     .spacing(SPACE_MD)
     .align_x(Alignment::Center);
@@ -91,10 +100,21 @@ fn shortcuts() -> Element<'static, Message> {
     for (key, description) in SHORTCUTS {
         content = content.push(
             row![
-                container(text(key).size(FONT_SM).center().style(styles::text_accent))
-                    .width(KEY_WIDTH)
-                    .height(KEY_HEIGHT)
-                    .style(styles::sunken),
+                // Tuşun kendisi listenin tarama hedefi: kullanıcı açıklamayı
+                // değil "hangi tuş" sorusunu arıyor. Bu yüzden en az açıklama
+                // kadar büyük (FONT_MD) ve sabit genişlikli — tuş adları kutu
+                // içinde aynı ızgaraya oturmalı, "W / ↑" ile "1 / 2 / 3" arası
+                // oransal fontta her satırda başka yerde bitiyordu.
+                container(
+                    text(key)
+                        .font(theme::mono())
+                        .size(FONT_MD)
+                        .center()
+                        .style(styles::text_accent)
+                )
+                .width(KEY_WIDTH)
+                .height(KEY_HEIGHT)
+                .style(styles::sunken),
                 text(description)
                     .size(FONT_MD)
                     .style(styles::text_secondary),
@@ -127,7 +147,7 @@ fn panel<'a>(content: impl Into<Element<'a, Message>>) -> Element<'a, Message> {
 
 fn close_button() -> Element<'static, Message> {
     button(text("Kapat").size(FONT_SM).center())
-        .width(120.0)
+        .width(CLOSE_BUTTON_WIDTH)
         .height(CONTROL_HEIGHT)
         .style(styles::secondary)
         .on_press(Message::ModalClosed)

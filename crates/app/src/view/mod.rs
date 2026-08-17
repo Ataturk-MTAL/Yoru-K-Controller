@@ -14,13 +14,13 @@ mod status_bar;
 mod toolbar;
 mod widgets;
 
-use iced::widget::{canvas, column, container, row, scrollable, stack};
+use iced::widget::{canvas, column, container, row, scrollable, stack, Container};
 use iced::{Element, Fill};
 
 use crate::message::{Message, Tab};
 use crate::state::App;
 use crate::styles;
-use crate::theme::{SIDEBAR_WIDTH, SPACE_LG, SPACE_MD};
+use crate::theme::{SIDEBAR_WIDTH, SPACE_LG, SPACE_MD, SPACE_XL};
 
 use joystick::JoystickCanvas;
 use widgets::{section_title, separator};
@@ -66,6 +66,30 @@ fn main_pane(app: &App) -> Element<'_, Message> {
         .into()
 }
 
+/// Yan panel bölümünün kart çerçevesi.
+///
+/// Dört bölüm (bağlantı, motor, joystick, hız) tek çerçeve dilini paylaşır:
+/// hepsi `styles::card` üstünde aynı `SPACE_LG` iç dolgusuyla çizilir. Bu
+/// yardımcı olmadan iki bölüm çıplak, ikisi kart olarak duruyordu ve bunun
+/// görünen bedeli hizalamaydı: kartın iç dolgusu başlığı `SPACE_LG` kadar daha
+/// içeri kaydırdığı için "BAĞLANTI"/"MOTOR KONTROL" ile
+/// "SÜRÜŞ KUMANDA KOLU"/"HIZ GÖSTERGESİ" iki ayrı sol hizada başlıyordu.
+///
+/// Ortak dil "çıplak + ayırıcı" değil "kart" seçildi çünkü seçim zaten yarı
+/// yarıya yapılmıştı: kartlı iki bölüm hem içerik olarak ağır (canvas, çubuk
+/// grafiği) hem de kendi zeminine ihtiyaç duyuyor — joystick halkası ve hız
+/// track'i `surface_sunken` kullanıyor, girinti tonunun bir yüzeyden çökmesi
+/// gerekiyor, yan panel zemini o yüzey değil.
+///
+/// `Container` döner (Element değil): joystick kartı üstüne bir de sabit
+/// yükseklik ekliyor.
+fn section_card<'a>(content: impl Into<Element<'a, Message>>) -> Container<'a, Message> {
+    container(content)
+        .width(Fill)
+        .padding(SPACE_LG)
+        .style(styles::card)
+}
+
 /// Sağ kontrol paneli.
 ///
 /// Bağlantı paneli sabit tepede, gerisi kaydırılabilir. Bu ayrım iki işi
@@ -75,18 +99,32 @@ fn main_pane(app: &App) -> Element<'_, Message> {
 /// İkincisi bir çizim kusurunu kapatıyor: `scrollable` içindeki `pick_list`,
 /// açılır ok glifini kaydırma katmanının dışına, sol panelin üstüne de
 /// çiziyor (iced 0.14.2'de gözlendi).
+///
+/// Panelin kenar dolgusu `SPACE_XL`: toolbar ve durum çubuğu da yatayda bu
+/// değeri kullanıyor, panel ise `SPACE_LG` kullanıyordu — pencerenin sağ
+/// kenarında üç yüzey arasında 12/16 px'lik bir basamak görünüyordu.
+///
+/// Panelde tek ayırıcı çizgi kaldı ve o da sabit/kaydırılan sınırını
+/// işaretliyor, yani panelin tam genişliğini kaplaması doğru. Bölüm araları
+/// ayırıcı yerine kart kenarlarıyla okunuyor; ayırıcı orada kalsaydı biri
+/// panel genişliğinde (320 px), diğeri dolgu içinde (296 px) olan iki farklı
+/// uzunlukta çizgi yan yana düşüyordu.
 fn sidebar(app: &App) -> Element<'_, Message> {
     let scrolling = column![
-        motor_control::view(app),
-        separator(),
+        section_card(motor_control::view(app)),
         joystick_card(app),
+        // Hız göstergesi kart çerçevesini kendi dosyasında kuruyor (birebir
+        // aynı `SPACE_LG` + `styles::card`); burada ikinci kez sarmalamak
+        // çerçeveyi ve dolguyu çiftlerdi.
         speed_display::view(app),
     ]
     .spacing(SPACE_LG)
-    .padding(SPACE_LG);
+    .padding(SPACE_XL);
 
     let panel = column![
-        container(connection_panel::view(app)).padding(SPACE_LG),
+        container(section_card(connection_panel::view(app)))
+            .width(Fill)
+            .padding(SPACE_XL),
         separator(),
         scrollable(scrolling).height(Fill),
     ];
@@ -112,10 +150,7 @@ fn joystick_card(app: &App) -> Element<'_, Message> {
     ]
     .spacing(SPACE_MD);
 
-    container(content)
-        .height(JOYSTICK_HEIGHT)
-        .width(Fill)
-        .padding(SPACE_LG)
-        .style(styles::card)
-        .into()
+    // Tek kartın sabit yüksekliği var: canvas kendi başına büyümek istemez,
+    // halkanın çapını kartın yüksekliği belirliyor.
+    section_card(content).height(JOYSTICK_HEIGHT).into()
 }

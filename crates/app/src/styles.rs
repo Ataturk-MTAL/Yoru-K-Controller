@@ -8,7 +8,7 @@
 //!   renkler yerine taban rengin üstüne `on_*` rengi belli bir oranda
 //!   karıştırılıyor. Yeni bir varyant eklemek 4 renk değil 2 rol istiyor.
 
-use iced::widget::{button, container, text};
+use iced::widget::{button, container, pick_list, text, text_input};
 use iced::{Background, Border, Color, Theme};
 
 use crate::theme::{Tokens, RADIUS_LG, RADIUS_MD, RADIUS_SM};
@@ -93,6 +93,31 @@ pub fn error_badge(theme: &Theme) -> container::Style {
             radius: RADIUS_SM.into(),
         },
         ..container::Style::default()
+    }
+}
+
+/// Tema dışı içerik üstündeki çip — kamera rozetleri, harita koordinat kutusu,
+/// OSM atıfı, video kontrol çubuğu.
+///
+/// Modal karartması `scrim` ile aynı şey değil: burada amaç arkayı geri plana
+/// atmak değil, üstündeki metni okutmak. Metin rengi de zeminle birlikte
+/// veriliyor (`on_overlay`) — container'ın `text_color`'ı çocuklara devrolduğu
+/// için çağrı yerinde ayrıca renk vermek gerekmiyor.
+///
+/// Yarıçap dışarıdan geliyor: aynı zemin hem küçük rozette (RADIUS_SM) hem
+/// daha büyük kutularda (RADIUS_MD) kullanılıyor.
+pub fn overlay_chip(radius: f32) -> impl Fn(&Theme) -> container::Style {
+    move |theme: &Theme| {
+        let t = Tokens::for_theme(theme);
+        container::Style {
+            text_color: Some(t.on_overlay),
+            background: Some(Background::Color(t.overlay)),
+            border: Border {
+                radius: radius.into(),
+                ..Border::default()
+            },
+            ..container::Style::default()
+        }
     }
 }
 
@@ -201,18 +226,10 @@ pub fn ghost(theme: &Theme, status: button::Status) -> button::Style {
     }
 }
 
-/// Segment seçici (Serial / TCP-IP) — aktif olan dolgulu.
-pub fn segment(active: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
-    move |theme: &Theme, status: button::Status| {
-        if active {
-            accent(theme, status)
-        } else {
-            secondary(theme, status)
-        }
-    }
-}
-
-/// Aç/kapa butonu (Işık, Fren, Sol Ters, Sağ Ters).
+/// Aç/kapa butonu (Işık, Fren, Sol Ters, Sağ Ters) — açıkken dolgulu.
+///
+/// "Seçili/açık = birincil dolgu, değil = nötr kenarlıklı" kuralının tek
+/// gövdesi burada; `segment` de buna delege ediyor.
 pub fn toggle(on: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
     move |theme: &Theme, status: button::Status| {
         if on {
@@ -223,11 +240,29 @@ pub fn toggle(on: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
     }
 }
 
-/// Motor başlat/durdur — çalışırken yeşil, dururken birincil renk.
+/// Segment seçici (Serial / TCP-IP) — aktif olan dolgulu.
+///
+/// Görsel olarak `toggle` ile aynı; ad ayrı duruyor çünkü anlamı ayrı. Segment
+/// bir kümede karşılıklı dışlayan seçim, toggle bağımsız bir aç/kapa. İkisinin
+/// görünümü ileride ayrışırsa (örneğin segmentin ortak çerçeve içinde birleşik
+/// çizilmesi) değişiklik yalnızca bu fonksiyona dokunur.
+pub fn segment(active: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
+    toggle(active)
+}
+
+/// Motor başlat/durdur.
+///
+/// Çalışırken `danger`: buton eylemi ("Durdur") anlatıyor, durumu değil.
+/// Eskiden `success` (yeşil) kullanılıyordu ve aynı "durdur" eylemi kamerada
+/// "■ Durdur", haritada "■ GPS Durdur" ile kırmızıyken burada yeşildi.
+/// Motorun ÇALIŞTIĞI bilgisi zaten üç ayrı yerde var: durum çubuğundaki
+/// motor noktası + "Motor Çalışıyor" etiketi (view/status_bar.rs), joystick
+/// rengi ve hız çubukları. Geri almak isteyen buradaki `danger`'ı `success`
+/// yapar; durumu buton renginden okumaya dönmek demek olduğunu bilerek.
 pub fn motor(running: bool) -> impl Fn(&Theme, button::Status) -> button::Style {
     move |theme: &Theme, status: button::Status| {
         if running {
-            success(theme, status)
+            danger(theme, status)
         } else {
             accent(theme, status)
         }
@@ -265,6 +300,80 @@ fn filled(
             radius: RADIUS_MD.into(),
         },
         ..button::Style::default()
+    }
+}
+
+// ═══════════════════════════════════════════════════════
+//  Alan stilleri (pick_list / text_input)
+// ═══════════════════════════════════════════════════════
+//
+// Bu iki widget stil verilmediğinde iced'in `Palette`'ten türettiği kendi
+// renklerini ve 2.0'lık bir köşe yarıçapını kullanıyor — ikisi de bizim
+// ölçeğimizde yok. Sonuç: aynı satırdaki buton ile alan farklı bir tasarım
+// dilinden geliyormuş gibi duruyordu. İkisi de aynı üçlüyü kullanır:
+// zemin `control`, kenarlık `outline`, metin `on_control` — yani nötr
+// kenarlıklı butonla (`secondary`) birebir aynı aile.
+
+/// Seçim kutusu (pick_list) — port ve kamera seçicileri.
+///
+/// Açık durumda kenarlık `primary`'e geçiyor: liste ekranın başka bir yerinde
+/// açılıyor, hangi alandan çıktığı yalnızca bu kenarlıktan anlaşılıyor.
+pub fn field(theme: &Theme, status: pick_list::Status) -> pick_list::Style {
+    let t = Tokens::for_theme(theme);
+
+    let (background, border_color) = match status {
+        pick_list::Status::Active => (t.control, t.outline),
+        pick_list::Status::Hovered => {
+            (state_layer(t.control, t.on_control, HOVER_LAYER), t.outline)
+        }
+        pick_list::Status::Opened { .. } => (t.control, t.primary),
+    };
+
+    pick_list::Style {
+        text_color: t.on_control,
+        placeholder_color: t.on_surface_muted,
+        // Oku metinden bir ton geri çekiyoruz: değer okunur, gösterge süs.
+        handle_color: t.on_surface_variant,
+        background: Background::Color(background),
+        border: Border {
+            color: border_color,
+            width: 1.0,
+            radius: RADIUS_MD.into(),
+        },
+    }
+}
+
+/// Metin kutusu — host / port alanları.
+///
+/// Odaklıyken kenarlık `primary`; klavye odağının nerede olduğu tema renginden
+/// okunuyor, kalınlık değişmiyor (kalınlaşan kenarlık alanı 1 px oynatır).
+pub fn input(theme: &Theme, status: text_input::Status) -> text_input::Style {
+    let t = Tokens::for_theme(theme);
+
+    let (background, border_color, value) = match status {
+        text_input::Status::Active => (t.control, t.outline, t.on_control),
+        text_input::Status::Hovered => (
+            state_layer(t.control, t.on_control, HOVER_LAYER),
+            t.outline,
+            t.on_control,
+        ),
+        text_input::Status::Focused { .. } => (t.control, t.primary, t.on_control),
+        text_input::Status::Disabled => (t.control_disabled, t.outline, t.on_control_disabled),
+    };
+
+    text_input::Style {
+        background: Background::Color(background),
+        border: Border {
+            color: border_color,
+            width: 1.0,
+            radius: RADIUS_MD.into(),
+        },
+        icon: t.on_surface_variant,
+        placeholder: t.on_surface_muted,
+        value,
+        // Seçim `primary` değil `primary_container`: dolgu rol renginde olursa
+        // seçili metin kendi zemininin altında kalıyor.
+        selection: t.primary_container,
     }
 }
 

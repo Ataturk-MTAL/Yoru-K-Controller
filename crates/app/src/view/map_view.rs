@@ -9,22 +9,20 @@ use iced::widget::canvas::{self, Frame, Geometry, Path, Stroke};
 use iced::widget::{
     button, canvas as canvas_widget, column, container, row, sensor, slider, stack, text,
 };
-use iced::{
-    Alignment, Background, Border, Color, Element, Fill, Point, Rectangle, Renderer, Theme,
-};
+use iced::{Alignment, Color, Element, Fill, Point, Rectangle, Renderer, Theme};
 
 use crate::map::{MapState, MAX_ZOOM, MIN_ZOOM};
 use crate::message::Message;
 use crate::state::App;
 use crate::styles;
 use crate::theme::{
-    Tokens, CONTROL_HEIGHT, FONT_LG, FONT_SM, FONT_XS, ICON_BUTTON, RADIUS_MD, RADIUS_SM, SPACE_MD,
-    SPACE_SM,
+    Tokens, CONTROL_HEIGHT, FONT_SM, FONT_XS, RADIUS_MD, RADIUS_SM, SPACE_MD, SPACE_SM, SPACE_XS,
 };
-use crate::view::widgets::numeric;
+use crate::view::widgets::{connection_warning, icon_button, numeric};
 
-/// Alt zoom çubuğu yüksekliği — 40×40 zoom düğmeleri sığsın diye Slint'teki
-/// 32 px'ten büyütüldü.
+/// Alt zoom çubuğu yüksekliği — kabuk, içindeki denetimden bir tık yüksek olsun
+/// diye CONTROL_HEIGHT + dikey nefes payı. Buton yüksekliği DEĞİL: düğmeler
+/// CONTROL_HEIGHT'tan gelir, bu sayı yalnızca çubuğun kendi kabuğunu ölçer.
 const ZOOM_BAR_HEIGHT: f32 = 44.0;
 /// GPS butonu genişliği.
 const GPS_BUTTON_WIDTH: f32 = 200.0;
@@ -32,8 +30,10 @@ const GPS_BUTTON_WIDTH: f32 = 200.0;
 const MARKER_RADIUS: f32 = 8.0;
 /// İşaretçi çevresindeki halka yarıçapı.
 const MARKER_RING: f32 = 14.0;
-/// Kenar boşluğu.
-const EDGE: f32 = 8.0;
+/// Canvas'taki ince çizgi kalınlığı (iskelet çerçevesi ve çaprazı).
+const SKELETON_LINE: f32 = 1.0;
+/// Başarısız tile'ın çapraz işaretinin kenardan içe oranı.
+const SKELETON_CROSS_INSET: f32 = 0.35;
 
 type ButtonStyleFn = fn(&Theme, button::Status) -> button::Style;
 
@@ -57,6 +57,9 @@ pub fn view(app: &App) -> Element<'_, Message> {
     if !app.connected {
         layers = layers.push(connection_warning());
     }
+    if app.map.has_failures() {
+        layers = layers.push(offline_badge());
+    }
 
     column![layers.height(Fill), zoom_bar(app)].into()
 }
@@ -75,128 +78,122 @@ fn gps_button(app: &App) -> Element<'_, Message> {
         styles::success
     };
 
+    // Yükseklik CONTROL_HEIGHT: eskiden ZOOM_BAR_HEIGHT verilmişti, yani alt
+    // çubuğun kabuk ölçüsü buton ölçüsü sanılıyordu ve bu düğme uygulamadaki
+    // diğer bütün butonlardan 8 px yüksek çiziliyordu.
     container(
         button(text(label).size(FONT_SM).center())
             .width(GPS_BUTTON_WIDTH)
-            .height(ZOOM_BAR_HEIGHT)
+            .height(CONTROL_HEIGHT)
             .style(style)
             .on_press_maybe(app.connected.then_some(Message::GpsToggled)),
     )
     .align_bottom(Fill)
-    .padding(EDGE)
+    .padding(SPACE_MD)
     .into()
 }
 
 /// Sağ üst koordinat kutusu ya da "GPS kapalı" rozeti.
+///
+/// Metinlerin hiçbiri kendi rengini vermiyor: zemin `overlay_chip` ve o çipin
+/// `text_color`'ı `on_overlay`. Buradaki eski `text_success` / `text_primary` /
+/// `text_tertiary` rolleri tema paletinden geliyordu, yani açık temada KOYU
+/// tonlardı ve 0.72 alfa siyah çipin üstünde okunmuyordu. Durum ayrımı artık
+/// metnin kendisinde ("● GPS … pkt" / "GPS bekliyor…" / "GPS kapalı").
+///
+/// Enlem/boylam `numeric` ile mono yazılır — durum çubuğu aynı veriyi aynı
+/// fontla gösteriyor; ondalık haneler basamak basamak hizalı kalsın.
 fn coordinate_overlay(app: &App) -> Element<'_, Message> {
     let content: Element<'_, Message> = if app.gps_active && app.gps_point_count > 0 {
         column![
-            text!("● GPS  {} pkt", app.gps_point_count)
-                .size(FONT_SM)
-                .style(styles::text_success),
-            text!(
+            text!("● GPS  {} pkt", app.gps_point_count).size(FONT_SM),
+            numeric(format!(
                 "{:.4}° {}",
                 app.gps_lat,
                 if app.gps_lat >= 0.0 { "N" } else { "S" }
-            )
-            .size(FONT_SM)
-            .style(styles::text_primary),
-            text!(
+            )),
+            numeric(format!(
                 "{:.4}° {}",
                 app.gps_lon,
                 if app.gps_lon >= 0.0 { "E" } else { "W" }
-            )
-            .size(FONT_SM)
-            .style(styles::text_primary),
+            )),
         ]
-        .spacing(2.0)
+        .spacing(SPACE_XS)
         .into()
     } else if app.gps_active {
-        text("GPS bekliyor...")
-            .size(FONT_SM)
-            .style(styles::text_warning)
-            .into()
+        text("GPS bekliyor...").size(FONT_SM).into()
     } else {
-        text("GPS kapalı")
-            .size(FONT_SM)
-            .style(styles::text_tertiary)
-            .into()
+        text("GPS kapalı").size(FONT_SM).into()
     };
 
     container(
         container(content)
             .padding(SPACE_SM)
-            .style(|theme: &Theme| container::Style {
-                background: Some(Background::Color(Tokens::for_theme(theme).scrim)),
-                border: Border {
-                    radius: RADIUS_MD.into(),
-                    ..Border::default()
-                },
-                ..container::Style::default()
-            }),
+            .style(styles::overlay_chip(RADIUS_MD)),
     )
     .align_right(Fill)
     .align_top(Fill)
-    .padding(EDGE)
+    .padding(SPACE_MD)
+    .into()
+}
+
+/// Üst ortada "harita çevrimdışı" rozeti.
+///
+/// Sol üst köşe `connection_warning`'e, sağ üst koordinat kutusuna, alt köşeler
+/// GPS düğmesi ile OSM atıfına ait — bu rozet dördünün hiçbiriyle çakışmayan
+/// tek serbest bölgede duruyor.
+fn offline_badge<'a>() -> Element<'a, Message> {
+    container(
+        container(text("Harita çevrimdışı — tile'lar indirilemedi").size(FONT_SM))
+            .padding([SPACE_XS, SPACE_SM])
+            .style(styles::overlay_chip(RADIUS_SM)),
+    )
+    .center_x(Fill)
+    .align_top(Fill)
+    .padding(SPACE_MD)
     .into()
 }
 
 /// Sağ altta OSM atıfı.
 ///
 /// Lisans gereği okunur kalmalı; 9 px soluk gri harita üzerinde kayboluyordu,
-/// diğer overlay'lerle aynı koyu çipe alındı.
+/// diğer overlay'lerle aynı koyu çipe alındı. Dolgu ölçek dışı 6 px değil,
+/// SPACE_* adımlarından: rozet küçük olduğu için en dar iki adım.
 fn attribution<'a>() -> Element<'a, Message> {
     container(
-        container(
-            text("© OpenStreetMap")
-                .size(FONT_XS)
-                .style(styles::text_secondary),
-        )
-        .padding([2.0, 6.0])
-        .style(|theme: &Theme| container::Style {
-            background: Some(Background::Color(Tokens::for_theme(theme).scrim)),
-            border: Border {
-                radius: RADIUS_SM.into(),
-                ..Border::default()
-            },
-            ..container::Style::default()
-        }),
+        container(text("© OpenStreetMap").size(FONT_XS))
+            .padding([SPACE_XS, SPACE_SM])
+            .style(styles::overlay_chip(RADIUS_SM)),
     )
     .align_right(Fill)
     .align_bottom(Fill)
-    .padding(EDGE)
-    .into()
-}
-
-fn connection_warning<'a>() -> Element<'a, Message> {
-    container(
-        container(
-            text("Yörü-K bağlı değil")
-                .size(FONT_SM)
-                .style(styles::text_error),
-        )
-        .padding([4.0, 8.0])
-        .style(styles::error_badge),
-    )
-    .padding(EDGE)
+    .padding(SPACE_MD)
     .into()
 }
 
 /// Alt zoom çubuğu.
 ///
 /// `−` ve `+` daha önce düz metindi: buton gibi görünüp hiçbir şey yapmıyordu.
-/// Artık gerçek butonlar ve 40×40 hedef alanına sahipler.
+/// Artık ortak `icon_button` — motor panelindeki aynı −/+ glifiyle tek gövde,
+/// tek punto. Yerel kopyası glifi FONT_LG çizdiği için iki panelde aynı işaret
+/// iki boyda görünüyordu.
 fn zoom_bar(app: &App) -> Element<'_, Message> {
     let zoom = app.map.zoom.clamp(MIN_ZOOM, MAX_ZOOM);
 
     container(
         row![
-            zoom_step("−", zoom.saturating_sub(1), zoom > MIN_ZOOM),
+            icon_button(
+                "−",
+                (zoom > MIN_ZOOM).then_some(Message::MapZoomSelected(zoom.saturating_sub(1)))
+            ),
             slider(MIN_ZOOM as u8..=MAX_ZOOM as u8, zoom as u8, |value| {
                 Message::MapZoomSelected(u32::from(value))
             })
             .width(Fill),
-            zoom_step("+", zoom + 1, zoom < MAX_ZOOM),
+            icon_button(
+                "+",
+                (zoom < MAX_ZOOM).then_some(Message::MapZoomSelected(zoom + 1))
+            ),
             numeric(format!("z{zoom}"))
                 .width(32.0)
                 .align_x(Alignment::End)
@@ -211,19 +208,46 @@ fn zoom_bar(app: &App) -> Element<'_, Message> {
     .into()
 }
 
-/// Tek adım zoom düğmesi — sınıra gelince pasifleşir.
-fn zoom_step<'a>(glyph: &'a str, target: u32, enabled: bool) -> Element<'a, Message> {
-    button(text(glyph).size(FONT_LG).center())
-        .width(ICON_BUTTON)
-        .height(CONTROL_HEIGHT)
-        .style(styles::secondary)
-        .on_press_maybe(enabled.then_some(Message::MapZoomSelected(target)))
-        .into()
-}
-
 // ═══════════════════════════════════════════════════════
 //  Canvas
 // ═══════════════════════════════════════════════════════
+
+/// Eksik tile'ın yerine çizilen iskelet.
+///
+/// İki durumu ayırt eder: `failed` ise çapraz işaretli (bir daha gelmeyecek,
+/// kullanıcı ağı kontrol etsin), değilse düz plaka (yükleniyor). Aradaki fark
+/// olmadan yavaş ağ ile çevrimdışı ağ aynı görünüyordu.
+fn draw_tile_skeleton(frame: &mut Frame, rect: Rectangle, failed: bool, t: &Tokens) {
+    frame.fill_rectangle(rect.position(), rect.size(), t.surface_container_low);
+    frame.stroke(
+        &Path::rectangle(rect.position(), rect.size()),
+        Stroke::default()
+            .with_width(SKELETON_LINE)
+            .with_color(t.outline_variant),
+    );
+
+    if !failed {
+        return;
+    }
+
+    // Plakanın ortasında ölçekle küçülen bir çapraz — tile 256 px olduğu için
+    // işaret sabit değil, kenarın oranı kadar içeriden başlıyor.
+    let inset = rect.width * SKELETON_CROSS_INSET;
+    let (left, right) = (rect.x + inset, rect.x + rect.width - inset);
+    let (top, bottom) = (rect.y + inset, rect.y + rect.height - inset);
+    let cross = Path::new(|builder| {
+        builder.move_to(Point::new(left, top));
+        builder.line_to(Point::new(right, bottom));
+        builder.move_to(Point::new(right, top));
+        builder.line_to(Point::new(left, bottom));
+    });
+    frame.stroke(
+        &cross,
+        Stroke::default()
+            .with_width(SKELETON_LINE)
+            .with_color(t.on_surface_disabled),
+    );
+}
 
 struct MapCanvas<'a> {
     map: &'a MapState,
@@ -304,8 +328,15 @@ impl canvas::Program<Message> for MapCanvas<'_> {
 
         frame.fill_rectangle(Point::ORIGIN, bounds.size(), t.surface_sunken);
 
-        for (coord, handle) in &self.map.tiles {
-            frame.draw_image(self.map.tile_rect(*coord), handle);
+        // Görünür alanın tamamı üzerinden geçiyoruz, elde olanlar üzerinden
+        // değil: eksik tile'ın yerinde eskiden çıplak zemin kalıyordu ve
+        // "yükleniyor" ile "indirilemedi" ayırt edilemiyordu.
+        for coord in self.map.visible_tiles() {
+            let rect = self.map.tile_rect(coord);
+            match self.map.tiles.get(&coord) {
+                Some(handle) => frame.draw_image(rect, handle),
+                None => draw_tile_skeleton(&mut frame, rect, self.map.is_failed(&coord), &t),
+            }
         }
 
         if let Some((lat, lon)) = self.gps {

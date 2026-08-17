@@ -5,19 +5,22 @@
 //! Görünüm menüsündeki Kamera/Harita zaten ortadaki sekmelerde.
 
 use iced::widget::{button, container, row, text, Space};
-use iced::{Alignment, Background, Border, Element, Fill, Font, Theme};
+use iced::{Alignment, Border, Element, Fill, Font, Theme};
 
 use crate::message::{Message, Modal, Tab};
 use crate::state::App;
 use crate::styles;
 use crate::theme::{
-    Tokens, CONTROL_HEIGHT, FONT_LG, FONT_SM, RADIUS_FULL, RADIUS_MD, SPACE_SM, SPACE_XL,
-    TOOLBAR_HEIGHT,
+    CONTROL_HEIGHT, FONT_LG, FONT_SM, RADIUS_FULL, SPACE_SM, SPACE_XL, TOOLBAR_HEIGHT,
 };
 
 /// Sekme butonu genişliği (Slint: 96px).
 const TAB_WIDTH: f32 = 96.0;
-/// Sekme yüksekliği — 40 px'lik toolbar içinde üstte/altta 6 px boşluk kalır.
+/// Sekme yüksekliği — standart kontrol ölçüsü.
+///
+/// Slint'teki bar 40 px'ti ve sekme dikeyde bara yapışıyordu; bar
+/// `TOOLBAR_HEIGHT` (48 px) olduğundan beri aynı sekme üstte/altta 6 px pay
+/// bırakıyor.
 const TAB_HEIGHT: f32 = CONTROL_HEIGHT;
 /// Tema düğmesi ölçüsü (Slint `ThemeToggle`: 52×28 hap).
 const TOGGLE_WIDTH: f32 = 52.0;
@@ -59,29 +62,26 @@ pub fn view(app: &App) -> Element<'_, Message> {
 }
 
 /// Ortadaki görünüm sekmesi — aktifken accent zeminli.
+///
+/// Kamera/Harita karşılıklı dışlayan bir seçim, yani yan paneldeki
+/// Serial/TCP-IP seçicisiyle aynı şey; stil de oradan, `styles::segment`'ten
+/// geliyor. Kazancı üç yerde:
+///
+/// * Hover/pressed artık var — buradaki eski closure `button::Status`'u hiç
+///   okumuyordu, sekmeler uygulamadaki geri bildirimsiz tek kontroldü.
+/// * Aktif etiket dolgunun `on_*` eşini alıyor. Eskiden `primary_container`
+///   zeminin üstüne `primary` yazılıyordu: koyu 3.32:1, açık 3.99:1 — ikisi de
+///   AA (4.5:1) altında.
+/// * Pasif sekme nötr `control` dolgusuna düşüyor. `ghost` verilemezdi: onun
+///   hover zemini de `primary_container`, yani üzerine gelinen pasif sekme
+///   aktif sekmeden ayırt edilemez olurdu.
 fn tab_button<'a>(label: &'a str, tab: Tab, active_tab: Tab) -> Element<'a, Message> {
-    let active = tab == active_tab;
-
     button(text(label).size(FONT_SM).center())
         .width(TAB_WIDTH)
-        // Açık yükseklik: 40 px'lik bar içinde sekme dikeyde bara yapışıyordu.
+        // Açık yükseklik: sekme yalnız metin kadar kalırsa dikeyde bara
+        // yapışıyor; `TAB_HEIGHT` bar içinde payı garanti ediyor.
         .height(TAB_HEIGHT)
-        .style(move |theme: &Theme, _status| {
-            let t = Tokens::for_theme(theme);
-            button::Style {
-                background: active.then_some(Background::Color(t.primary_container)),
-                text_color: if active {
-                    t.primary
-                } else {
-                    t.on_surface_variant
-                },
-                border: Border {
-                    radius: RADIUS_MD.into(),
-                    ..Border::default()
-                },
-                ..button::Style::default()
-            }
-        })
+        .style(styles::segment(tab == active_tab))
         .on_press(Message::TabSelected(tab))
         .into()
 }
@@ -108,21 +108,19 @@ fn theme_toggle(app: &App) -> Element<'_, Message> {
     )
     .width(TOGGLE_WIDTH)
     .height(TOGGLE_HEIGHT)
+    // Gövde `secondary`'den geliyor, burada yalnızca hap silueti için yarıçap
+    // eziliyor. Eskiden bu buton kendi `match`'ini yazıyordu ve Hovered/Pressed
+    // kolu `_` kolu ile aynı rengi döndürdüğü için uygulamada geri bildirimi
+    // olmayan tek butondu; metin de `control` dolgusunun üstünde `on_surface`
+    // ile yazılıyordu, dolgunun `on_*` eşi (`on_control`) ile değil.
     .style(|theme: &Theme, status| {
-        let t = Tokens::for_theme(theme);
-        let background = match status {
-            button::Status::Hovered | button::Status::Pressed => t.control,
-            _ => t.control,
-        };
+        let base = styles::secondary(theme, status);
         button::Style {
-            background: Some(Background::Color(background)),
-            text_color: t.on_surface,
             border: Border {
-                color: t.outline,
-                width: 1.0,
                 radius: RADIUS_FULL.into(),
+                ..base.border
             },
-            ..button::Style::default()
+            ..base
         }
     })
     .on_press(Message::ThemeToggled)

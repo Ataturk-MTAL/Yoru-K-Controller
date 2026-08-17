@@ -58,8 +58,21 @@ pub struct App {
 
     // ── Bağlantı ────────────────────────────────────────
     pub connected: bool,
+    /// Bağlantı isteği gönderildi, `Connected`/`Error` olayı henüz gelmedi.
+    ///
+    /// Seri port açılışı ve TCP el sıkışması gözle görülür sürüyor; bu bayrak
+    /// olmadan BAĞLAN'a basmak hiçbir şey yapmamış gibi görünüyordu.
+    pub connecting: bool,
     pub is_serial: bool,
     pub status_text: String,
+    /// Bağlantı hattının bildirdiği son hata.
+    ///
+    /// `transport` her kopmada `Error(neden)` ve hemen ardından `Disconnected`
+    /// yayıyor (`serial_worker.rs:72-73`, `tcp_worker.rs:83-84`). İki ayrı MVU
+    /// turu olduğu için ikincisi birincinin yazdığı `status_text`'i eziyordu:
+    /// gerçek neden ("Yazma hatası: …") görünmeden "Bağlantı kesildi"ye
+    /// dönüşüyordu. Neden burada duruyor, `Disconnected` kolu onu okuyor.
+    pub last_error: Option<String>,
     pub serial_port: Option<String>,
     pub available_ports: Vec<String>,
     pub tcp_host: String,
@@ -86,6 +99,12 @@ pub struct App {
 
     // ── Kamera ──────────────────────────────────────────
     pub camera_running: bool,
+    /// `start()` çağrıldı, `Started`/`Error` olayı henüz gelmedi.
+    ///
+    /// Eskiden `camera_running` başlatma anında doğrulanıyordu: kamera hiç
+    /// açılmasa bile arayüz "çalışıyor" gösteriyor, kullanıcı da hata
+    /// mesajından önce boş bir DURDUR butonuna bakıyordu.
+    pub camera_starting: bool,
     pub camera_frame: Option<image::Handle>,
     pub camera_fps: u32,
     pub camera_error: String,
@@ -93,6 +112,12 @@ pub struct App {
     pub selected_camera: Option<CameraChoice>,
     pub detection_enabled: bool,
     pub detection_count: usize,
+    /// Tespit hattının neden hiç çalışmayacağı (model yüklenemedi).
+    ///
+    /// `camera_error`'dan ayrı: kamera sağlam, ölen yalnızca tespit işçisi.
+    /// İşçi uygulama boyunca bir kez doğuyor, dolayısıyla bu durum kalıcıdır —
+    /// `Some` olduğu sürece "🔍 Algıla" düğmesi kilitli kalır.
+    pub detection_error: Option<String>,
 
     // ── GPS / Harita ────────────────────────────────────
     pub gps_active: bool,
@@ -113,8 +138,10 @@ impl App {
             modal: None,
 
             connected: false,
+            connecting: false,
             is_serial: true,
             status_text: "Hazır...".into(),
+            last_error: None,
             serial_port: None,
             available_ports: Vec::new(),
             tcp_host: "192.168.4.1".into(),
@@ -136,6 +163,7 @@ impl App {
             keyboard: KeyboardState::default(),
 
             camera_running: false,
+            camera_starting: false,
             camera_frame: None,
             camera_fps: 0,
             camera_error: String::new(),
@@ -143,6 +171,7 @@ impl App {
             selected_camera: None,
             detection_enabled: false,
             detection_count: 0,
+            detection_error: None,
 
             gps_active: false,
             gps_lat: 0.0,
