@@ -208,7 +208,14 @@ impl Tokens {
             // "Kamera aktif değil". Yeni ton: 5.15 / 5.46 / 5.87. Merdiven
             // monoton kalıyor (`on_surface_variant` kart üstünde 6.36).
             on_surface_muted: hex(0x8b8fa0),
-            on_surface_disabled: hex(0x464a5c),
+            // `on_control_disabled` ile aynı gerekçe, ama ayrı yüzeyler: bu ton
+            // dolgusuz zeminlerde kullanılıyor — toolbar'ın pasif `ghost`
+            // düğmesi (`styles.rs:217` → `view/toolbar.rs:93`) ve haritada
+            // indirilemeyen tile'ın çaprazı (`view/map_view.rs:248`). Eski
+            // #464a5c toolbar üstünde 1.89:1'de kalıyordu; bağlantı yokken
+            // "Bağlantıyı Kes" etiketi gözle neredeyse görünmüyordu. Yeni ton:
+            // toolbar 3.09:1, tile iskeleti 3.28:1.
+            on_surface_disabled: hex(0x656a80),
 
             // Container tonları bilerek doygun: bunlar dolgulu butonların
             // zemini ve `surface_container` (#1a1e2e) ile `control` (#222638)
@@ -288,7 +295,10 @@ impl Tokens {
             // 4.86. `on_surface_variant` (kart üstünde 6.25) hâlâ bir kademe
             // önde, yani merdiven kademelerini kaybetmedi.
             on_surface_muted: hex(0x656975),
-            on_surface_disabled: hex(0xb8bac4),
+            // Koyu temadakiyle aynı gerekçe: eski #b8bac4 toolbar üstünde
+            // 1.93:1, tile iskeleti üstünde 1.71:1. Yeni ton 3.44:1 / 3.05:1 —
+            // iki zeminde de 3.0 eşiğini geçen en hafif dokunuş.
+            on_surface_disabled: hex(0x868a98),
 
             // #3b6ee6 tabanda 4.61:1 ile sınırı ancak geçiyordu; durum katmanı
             // eklendiğinde hover 4.00:1 / pressed 3.90:1'e düşüyordu — yani
