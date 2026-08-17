@@ -13,13 +13,17 @@ use iced::{Background, Border, Color, Theme};
 
 use crate::theme::{Tokens, RADIUS_LG, RADIUS_MD, RADIUS_SM};
 
-/// Durum katmanı oranları.
+/// Durum katmanı oranları — M3'ün hover %8 / pressed %10 basamakları.
 ///
-/// M3 durumları bir opaklık katmanıyla anlatıyor; spec'teki tam yüzdeler
-/// doğrulanamadı (m3.material.io sayfaları JS ile çiziliyor), bu yüzden
-/// aşağıdaki değerler bu uygulamaya ait.
-const HOVER_LAYER: f32 = 0.12;
-const PRESSED_LAYER: f32 = 0.20;
+/// Bu oranlar keyfi değil, kontrast bütçesi: `state_layer` zemini METİN rengine
+/// doğru kaydırıyor, yani katman kalınlaştıkça metin kontrastı düşüyor. Önceki
+/// 0.12 / 0.20 değerleri üç butonda WCAG 1.4.3'ün altına iniyordu — açık tema
+/// accent hover 3.76:1 / pressed 3.28:1, açık success pressed 3.68:1, koyu
+/// success pressed 4.26:1. Yeni oranlarla sırasıyla 4.97 / 4.79, 5.10 ve 5.38.
+/// (Açık accent'in kurtulması ayrıca `primary` tonunun bir basamak
+/// koyulaşmasını gerektirdi — bkz. `theme::Tokens::light`.)
+const HOVER_LAYER: f32 = 0.08;
+const PRESSED_LAYER: f32 = 0.10;
 
 /// `on` rengini `base` üzerine verilen oranda karıştırır.
 fn state_layer(base: Color, on: Color, amount: f32) -> Color {

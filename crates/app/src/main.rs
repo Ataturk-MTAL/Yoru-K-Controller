@@ -113,8 +113,23 @@ fn pointer_release() -> Subscription<Message> {
 /// `listen_with` bir **fn pointer** ister; yakalayan closure kabul edilmez.
 fn hotkeys() -> Subscription<Message> {
     event::listen_with(|event, status, _window| {
-        // Odaktaki bir metin alanı tuşu yuttuysa robot komutu üretilmez —
-        // IP adresi yazarken robotun hareket etmesini engeller.
+        // Acil durdurma odağa bakmaz. `text_input` boşluk karakterini metne
+        // ekleyip olayı yutuyor (`iced_widget/src/text_input.rs:1015-1032`:
+        // `' '.is_control()` false), yani host alanı odaktayken aşağıdaki
+        // `Captured` kontrolü Space'i sessizce yiyordu — motor çalışırken
+        // belgelenmiş acil kısayol odağa göre ölüyordu. Boşluk ne geçerli bir
+        // IPv4 adresinde ne de port numarasında yer alır; alan bir boşluk almış
+        // olsa bile durdurma her zaman kazanır.
+        if let Event::Keyboard(keyboard::Event::KeyPressed {
+            key: Key::Named(Named::Space),
+            ..
+        }) = &event
+        {
+            return Some(Message::EmergencyStop);
+        }
+
+        // Diğer tuşlarda odaktaki metin alanı kazanır — IP adresi yazarken
+        // robotun hareket etmesini engeller.
         if status == event::Status::Captured {
             return None;
         }

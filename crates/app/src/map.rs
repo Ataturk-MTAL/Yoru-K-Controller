@@ -9,6 +9,7 @@
 
 use std::collections::{BTreeMap, HashSet};
 use std::sync::OnceLock;
+use std::time::Duration;
 
 use iced::widget::image as iced_image;
 use iced::{Point, Rectangle, Size};
@@ -27,6 +28,33 @@ const DEFAULT_LON: f64 = 34.6415;
 const DEFAULT_ZOOM: u32 = 15;
 
 static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
+
+/// Tek bir tile isteğinin üst sınırı.
+///
+/// reqwest'in varsayılan istek timeout'u YOK. Timeout'suz takılan bir bağlantı
+/// tile'ı `pending` kümesinde sonsuza kadar tutuyordu; `take_missing_tiles`
+/// bekleyenleri atladığı için o kare kalıcı olarak "yükleniyor" iskeletinde
+/// kalıyor ve bir daha hiç denenmiyordu. Timeout dolduğunda `fetch_tile` `None`
+/// dönüyor, `drop_pending` tile'ı başarısız işaretliyor ve sonraki görünüm
+/// değişiminde yeniden isteniyor.
+const TILE_TIMEOUT: Duration = Duration::from_secs(10);
+
+/// Paylaşılan HTTP istemcisi — bağlantı havuzu tek noktada.
+fn client() -> &'static reqwest::Client {
+    CLIENT.get_or_init(|| {
+        reqwest::Client::builder()
+            .timeout(TILE_TIMEOUT)
+            .build()
+            .unwrap_or_else(|error| {
+                // Kurulum hatası yutulmaz: timeout'suz istemciyle devam etmek,
+                // sessizce haritasız kalmaktan iyi — ama hangisi olduğu yazılı.
+                eprintln!(
+                    "Tile HTTP istemcisi kurulamadı ({error}); timeout'suz istemciye düşülüyor"
+                );
+                reqwest::Client::new()
+            })
+    })
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct TileCoord {
@@ -243,7 +271,7 @@ pub fn lat_lon_to_world(lat: f64, lon: f64, zoom: u32) -> (f64, f64) {
 ///
 /// Hata durumunda `None` döner — harita eksik tile ile çalışmaya devam eder.
 pub async fn fetch_tile(coord: TileCoord) -> (TileCoord, Option<iced_image::Handle>) {
-    let client = CLIENT.get_or_init(reqwest::Client::new);
+    let client = client();
     let url = format!(
         "https://tile.openstreetmap.org/{}/{}/{}.png",
         coord.z, coord.x, coord.y

@@ -13,6 +13,8 @@
 //! koyu dolgu tercihi): aynı değer hem yüzey üstünde okunur metin, hem de
 //! beyaz yazılı dolgu olarak kontrastı karşılıyor.
 
+use std::sync::LazyLock;
+
 use iced::theme::Palette;
 use iced::{Color, Font, Theme};
 
@@ -199,7 +201,13 @@ impl Tokens {
 
             on_surface: hex(0xe8eaf0),
             on_surface_variant: hex(0x9ca0b0),
-            on_surface_muted: hex(0x636778),
+            // Üçüncü kademe eskiden #636778'di ve 12 px metinde WCAG 1.4.3'ü
+            // geçmiyordu: kart üstünde 2.95:1, yan panelde 3.12:1, sayfada
+            // 3.36:1 (gereken 4.5). Yedi çağrı yerinin hepsi taşıyıcı metin —
+            // "Motoru çalıştırmak için önce robota bağlan", "Bağlantı yok",
+            // "Kamera aktif değil". Yeni ton: 5.15 / 5.46 / 5.87. Merdiven
+            // monoton kalıyor (`on_surface_variant` kart üstünde 6.36).
+            on_surface_muted: hex(0x8b8fa0),
             on_surface_disabled: hex(0x464a5c),
 
             // Container tonları bilerek doygun: bunlar dolgulu butonların
@@ -231,7 +239,11 @@ impl Tokens {
             control: hex(0x222638),
             on_control: hex(0xd0d3de),
             control_disabled: hex(0x181b26),
-            on_control_disabled: hex(0x464a5c),
+            // Pasif metin eskiden #464a5c ile 1.96:1'de kalıyordu. WCAG pasif
+            // bileşenleri muaf tutuyor, ama burada pasif olan çoğu zaman
+            // BİRİNCİL eylem: "Motor BAŞLAT" ve "BAĞLAN" bağlantı kurulana
+            // kadar bu tonda duruyor. 3:1 alt sınırına çekildi (3.21:1).
+            on_control_disabled: hex(0x656a80),
 
             outline: hex(0x2e3348),
             outline_strong: hex(0x3e4460),
@@ -271,15 +283,29 @@ impl Tokens {
 
             on_surface: hex(0x1a1c24),
             on_surface_variant: hex(0x5c6070),
-            on_surface_muted: hex(0x8b8fa0),
+            // Koyu temadakiyle aynı gerekçe, ters yönde: eski #8b8fa0 kart
+            // üstünde 3.21:1, yan panelde 2.85:1 veriyordu. Yeni ton 5.48 /
+            // 4.86. `on_surface_variant` (kart üstünde 6.25) hâlâ bir kademe
+            // önde, yani merdiven kademelerini kaybetmedi.
+            on_surface_muted: hex(0x656975),
             on_surface_disabled: hex(0xb8bac4),
 
-            primary: hex(0x3b6ee6),
+            // #3b6ee6 tabanda 4.61:1 ile sınırı ancak geçiyordu; durum katmanı
+            // eklendiğinde hover 4.00:1 / pressed 3.90:1'e düşüyordu — yani
+            // birincil butonun üstüne fare gelince metin standardın altına
+            // iniyordu. Bir ton koyu: taban 5.86, hover 4.97, pressed 4.79.
+            // `text_accent` de kazanıyor (kart üstünde 4.61 → 5.86).
+            primary: hex(0x2f5ecb),
             on_primary: on_filled,
             primary_container: hex(0xe8effc),
             on_primary_container: hex(0x123a80),
 
-            success: hex(0x15794a),
+            // Aynı sebep: #15794a pressed durumunda 4.4952:1'de kalıyordu
+            // (yuvarlamasız karışımla 4.4719:1) — sınırın altı. Yeni ton
+            // pressed'de 5.10:1. `motor_running` ve `sensor_online` da aynı
+            // değeri taşıyor; üçü tek yeşil olmalı, yoksa aynı "çalışıyor"
+            // bilgisi noktada ve butonda iki farklı tonda görünür.
+            success: hex(0x136e43),
             on_success: on_filled,
             success_container: hex(0xe6f7ef),
             on_success_container: hex(0x0a4b2c),
@@ -304,15 +330,16 @@ impl Tokens {
             control: hex(0xdfe3ea),
             on_control: hex(0x2c2f3a),
             control_disabled: hex(0xf0f1f5),
-            on_control_disabled: hex(0xb0b3be),
+            // Koyu temadakiyle aynı gerekçe: 1.85:1 → 3.12:1.
+            on_control_disabled: hex(0x84889a),
 
             outline: hex(0xd8dae0),
             outline_strong: hex(0xc0c3cc),
             outline_variant: hex(0xe8eaee),
 
-            motor_running: hex(0x15794a),
+            motor_running: hex(0x136e43),
             motor_stopped: hex(0x8b8fa0),
-            sensor_online: hex(0x15794a),
+            sensor_online: hex(0x136e43),
             sensor_offline: hex(0xa71d2a),
             sensor_warning: hex(0x8a6200),
 
@@ -338,11 +365,20 @@ impl Tokens {
     }
 }
 
-/// Koyu tema — `Palette`, iced'in yerleşik widget'larını (pick_list, slider…) besler.
-pub fn dark() -> Theme {
-    let t = Tokens::dark();
+/// Tema nesneleri bir kez kurulur.
+///
+/// `App::theme()` her arayüz yenilemesinde çağrılıyor
+/// (`iced_winit/src/window/state.rs:219` → `build_user_interfaces`), yani kamera
+/// 30 fps çalışırken saniyede ~30 kez. `Theme::custom` her çağrıda bir `String`
+/// ve bir `Arc` ayırıyor, üstüne `palette::Extended::generate` beş rol için
+/// `mix`/`deviate` hesaplıyor — `deviate` OKLch'e gidip geri dönüyor. `Theme`
+/// içi `Arc<Custom>` olduğu için önbellekten `clone()` yalnızca sayaç artırımı.
+static DARK: LazyLock<Theme> = LazyLock::new(|| build(DARK_NAME, Tokens::dark()));
+static LIGHT: LazyLock<Theme> = LazyLock::new(|| build(LIGHT_NAME, Tokens::light()));
+
+fn build(name: &'static str, t: Tokens) -> Theme {
     Theme::custom(
-        DARK_NAME.to_string(),
+        name.to_string(),
         Palette {
             background: t.surface_dim,
             text: t.on_surface,
@@ -354,18 +390,12 @@ pub fn dark() -> Theme {
     )
 }
 
+/// Koyu tema — `Palette`, iced'in yerleşik widget'larını (pick_list, slider…) besler.
+pub fn dark() -> Theme {
+    DARK.clone()
+}
+
 /// Açık tema.
 pub fn light() -> Theme {
-    let t = Tokens::light();
-    Theme::custom(
-        LIGHT_NAME.to_string(),
-        Palette {
-            background: t.surface_dim,
-            text: t.on_surface,
-            primary: t.primary,
-            success: t.success,
-            warning: t.warning,
-            danger: t.error,
-        },
-    )
+    LIGHT.clone()
 }
