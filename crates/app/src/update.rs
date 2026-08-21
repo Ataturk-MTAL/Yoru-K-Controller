@@ -27,6 +27,20 @@ pub fn update(app: &mut App, message: Message) -> Task<Message> {
         return Task::none();
     }
 
+    dispatch(app, message)
+}
+
+/// Kapıdan geçmiş mesajın işlenmesi.
+///
+/// Kısayol niyeti kolları buraya özyineliyor, `update`'e değil. Kapı yalnızca
+/// DIŞ kapıda uygulanmalı: bugün yedi niyet kolunun hepsi "modal açıkken
+/// yutulur" sınıfında, yani `update`'e özyinelemek de zararsız olurdu. Ama
+/// biri ileride "modal açıkken de çalışsın" diye geçenler listesine alınırsa
+/// (`RefreshRequested` akla yatkın bir aday), gövdesindeki
+/// `update(app, Message::PortsRefreshRequested)` hedef mesajın hâlâ yutulan
+/// sınıfına takılır ve sessizce hiçbir şey yapmaz. Ayrım o hatayı imkânsız
+/// kılıyor.
+fn dispatch(app: &mut App, message: Message) -> Task<Message> {
     match message {
         // ── Bağlantı ────────────────────────────────────
         Message::SerialModeSelected(is_serial) => {
@@ -248,22 +262,22 @@ pub fn update(app: &mut App, message: Message) -> Task<Message> {
         // klavye, düğmenin kilitli olduğu durumlarda robota paket gönderirdi.
         Message::ConnectionToggleRequested => {
             if app.connected {
-                return update(app, Message::DisconnectPressed);
+                return dispatch(app, Message::DisconnectPressed);
             }
             // `connection_panel::connect_button`'ün kapısı: bağlanma sürerken
             // ikinci basış ikinci bir bağlantı denemesi başlatır.
             if app.connecting || !app.can_connect() {
                 return Task::none();
             }
-            update(app, Message::ConnectPressed)
+            dispatch(app, Message::ConnectPressed)
         }
 
         // İki listeyi birlikte yeniliyor: hangisinin tazeleneceği aktif sekmeye
         // bağlı olsaydı, yan panel her sekmede görünür olduğu için Kamera
         // sekmesindeyken port listesi kısayolsuz kalırdı.
         Message::RefreshRequested => Task::batch([
-            update(app, Message::PortsRefreshRequested),
-            update(app, Message::CamerasRefreshRequested),
+            dispatch(app, Message::PortsRefreshRequested),
+            dispatch(app, Message::CamerasRefreshRequested),
         ]),
 
         Message::MotorStartRequested => {
@@ -271,7 +285,7 @@ pub fn update(app: &mut App, message: Message) -> Task<Message> {
             if !app.connected || app.motor_running {
                 return Task::none();
             }
-            update(app, Message::StartPressed)
+            dispatch(app, Message::StartPressed)
         }
 
         Message::CameraToggleRequested => {
@@ -280,12 +294,12 @@ pub fn update(app: &mut App, message: Message) -> Task<Message> {
                 return Task::none();
             }
             if app.camera_running {
-                return update(app, Message::CameraStopPressed);
+                return dispatch(app, Message::CameraStopPressed);
             }
             if app.selected_camera.is_none() {
                 return Task::none();
             }
-            update(app, Message::CameraStartPressed)
+            dispatch(app, Message::CameraStartPressed)
         }
 
         Message::TransportToggleRequested => {
@@ -294,7 +308,7 @@ pub fn update(app: &mut App, message: Message) -> Task<Message> {
             if app.connected || app.connecting {
                 return Task::none();
             }
-            update(app, Message::SerialModeSelected(!app.is_serial))
+            dispatch(app, Message::SerialModeSelected(!app.is_serial))
         }
 
         Message::IntervalStepped(step) => {
@@ -314,7 +328,7 @@ pub fn update(app: &mut App, message: Message) -> Task<Message> {
             let Some(next) = step_index(current, step, INTERVALS_MS.len()) else {
                 return Task::none();
             };
-            update(app, Message::IntervalSelected(INTERVALS_MS[next]))
+            dispatch(app, Message::IntervalSelected(INTERVALS_MS[next]))
         }
 
         // Zoom yalnızca Harita sekmesinde: `+`/`−` Kamera sekmesindeyken de
@@ -327,7 +341,7 @@ pub fn update(app: &mut App, message: Message) -> Task<Message> {
                 Step::Up => app.map.zoom.saturating_add(1),
                 Step::Down => app.map.zoom.saturating_sub(1),
             };
-            update(app, Message::MapZoomSelected(zoom))
+            dispatch(app, Message::MapZoomSelected(zoom))
         }
 
         // ── Görünüm ─────────────────────────────────────
@@ -453,21 +467,25 @@ pub fn update(app: &mut App, message: Message) -> Task<Message> {
             request_tiles(app)
         }
 
-        Message::TileLoaded(coord, TileOutcome::Loaded(handle)) => {
-            app.map.insert_tile(coord, handle);
+        Message::TileLoaded(coord, issued, outcome) => {
+            // Bayatlık kararının tek mercii burası. `fetch_tile` ağ turundan
+            // önce iki kez bakıyor ama kuşak o turun İÇİNDE de artabiliyor;
+            // o durumda sonuç `Failed`/`Loaded` olarak dönüyor ve `Failed`
+            // yolu aynı tile için uçmakta olan TAZE isteğin `pending`
+            // girdisini siliyordu (sahte "çevrimdışı" rozeti + ikinci GET).
+            if !app.map.is_current_epoch(issued) {
+                return Task::none();
+            }
+
+            match outcome {
+                TileOutcome::Loaded(handle) => app.map.insert_tile(coord, handle),
+                TileOutcome::Failed => app.map.drop_pending(coord),
+                // Kuşak tazeyken `Stale` gelemez: `fetch_tile` bunu yalnızca
+                // `is_stale()` doğruyken üretiyor ve kuşak yalnızca artıyor.
+                TileOutcome::Stale => {}
+            }
             Task::none()
         }
-
-        Message::TileLoaded(coord, TileOutcome::Failed) => {
-            app.map.drop_pending(coord);
-            Task::none()
-        }
-
-        // Kuşağı geçmiş sonuç hiçbir şeye dokunmaz. `drop_pending` çağırmak,
-        // aynı tile için uçmakta olan TAZE isteği `pending`'den düşürüp
-        // `failed`'e yazardı: sahte "Harita çevrimdışı" rozeti ve bir sonraki
-        // kaydırmada aynı tile için ikinci bir GET.
-        Message::TileLoaded(_, TileOutcome::Stale) => Task::none(),
 
         Message::GpsToggled => {
             // `map_view::gps_button` kapısı — paket gönderiyor, bağlantı şart.
@@ -542,9 +560,10 @@ fn request_tiles(app: &mut App) -> Task<Message> {
     let epoch = app.map.epoch();
 
     Task::batch(missing.into_iter().map(move |coord| {
-        Task::perform(map::fetch_tile(coord, epoch.clone()), |(coord, handle)| {
-            Message::TileLoaded(coord, handle)
-        })
+        Task::perform(
+            map::fetch_tile(coord, epoch.clone()),
+            |(coord, issued, outcome)| Message::TileLoaded(coord, issued, outcome),
+        )
     }))
 }
 

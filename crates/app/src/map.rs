@@ -96,12 +96,33 @@ pub struct TileEpoch {
 }
 
 impl TileEpoch {
+    /// Bu isteğin doğduğu kuşak — sonuçla birlikte UI thread'ine geri döner.
+    pub fn issued(&self) -> u64 {
+        self.issued
+    }
+
+    /// `fetch_tile` içindeki ucuz erken çıkışlar için. Karar mercii DEĞİL:
+    /// kuşak bu kontrolden sonra da artabilir (bkz. `TileOutcome`).
     fn is_stale(&self) -> bool {
         self.current.load(Ordering::Relaxed) != self.issued
     }
 }
 
 /// Bir tile isteğinin sonucu.
+///
+/// Bayatlık kararı burada VERİLMEZ, `update` tarafında verilir
+/// (`MapState::is_current_epoch`). Sebep: `fetch_tile` içindeki iki
+/// `is_stale()` kontrolü de ağ turundan ÖNCE. Kuşak, `send().await` ile
+/// `bytes().await` arasında (birlikte `TILE_TIMEOUT` = 10 s'e kadar)
+/// artabiliyor ve o durumda sonuç `Stale` değil `Failed` ya da `Loaded` olarak
+/// dönüyor. `Failed` yolu ilk kusuru aynen üretiyordu: `drop_pending` aynı
+/// tile için UÇMAKTA OLAN taze isteğin `pending` girdisini siliyor,
+/// `coord.z == self.zoom` tuttuğu için `failed`'e yazıyor — sahte "Harita
+/// çevrimdışı" rozeti ve sonraki kaydırmada aynı tile için ikinci bir GET.
+///
+/// Üçüncü bir `is_stale()` pencereyi daraltır ama kapatmaz: kuşak o kontrol
+/// ile mesajın teslimi arasında da artabilir. Kuşak yalnızca UI thread'inde
+/// (`zoom_at`) arttığı için karşılaştırma ancak orada yarışsız.
 ///
 /// `Option<Handle>` yetmiyordu: "indirilemedi" ile "artık bu görünüme ait
 /// değil" aynı `None`'a düşüyor ve ikisi de `drop_pending`'e gidiyordu. Kuşak
@@ -274,6 +295,15 @@ impl MapState {
         missing
     }
 
+    /// Bu sonuç hâlâ güncel kuşağa mı ait?
+    ///
+    /// Kuşak yalnızca `zoom_at` içinde, yani UI thread'inde artıyor; bu
+    /// karşılaştırma da UI thread'inde yapılıyor, dolayısıyla yarış yok.
+    /// `fetch_tile` içindeki kontroller yalnızca ucuz erken çıkış.
+    pub fn is_current_epoch(&self, issued: u64) -> bool {
+        self.epoch.load(Ordering::Relaxed) == issued
+    }
+
     /// Şu anki görünüm kuşağı — `fetch_tile`'a verilir.
     pub fn epoch(&self) -> TileEpoch {
         TileEpoch {
@@ -373,12 +403,13 @@ pub fn lat_lon_to_world(lat: f64, lon: f64, zoom: u32) -> (f64, f64) {
 /// Tek bir tile'ı indirir ve çözer.
 ///
 /// Hata durumunda `None` döner — harita eksik tile ile çalışmaya devam eder.
-pub async fn fetch_tile(coord: TileCoord, epoch: TileEpoch) -> (TileCoord, TileOutcome) {
+pub async fn fetch_tile(coord: TileCoord, epoch: TileEpoch) -> (TileCoord, u64, TileOutcome) {
+    let issued = epoch.issued();
     // Kuyruğa girmeden önce: zoom bu future daha ilk kez uyanmadan değişmiş
     // olabilir. Sırada beklemesinin anlamı yok, üstelik önündeki canlı
     // indirmeleri geciktirir.
     if epoch.is_stale() {
-        return (coord, TileOutcome::Stale);
+        return (coord, issued, TileOutcome::Stale);
     }
 
     // Kuyruğa gir. `permit` düşene kadar en fazla iki indirme uçar.
@@ -387,13 +418,13 @@ pub async fn fetch_tile(coord: TileCoord, epoch: TileEpoch) -> (TileCoord, TileO
         // Semaphore yalnızca kapatılınca hata verir; bu uygulamada kapatan yok.
         Err(error) => {
             eprintln!("Tile kuyruğu kapandı: {error}");
-            return (coord, TileOutcome::Failed);
+            return (coord, issued, TileOutcome::Failed);
         }
     };
 
     // Sıra beklerken de değişmiş olabilir.
     if epoch.is_stale() {
-        return (coord, TileOutcome::Stale);
+        return (coord, issued, TileOutcome::Stale);
     }
 
     let client = client();
@@ -411,20 +442,20 @@ pub async fn fetch_tile(coord: TileCoord, epoch: TileEpoch) -> (TileCoord, TileO
         Ok(response) => response,
         Err(error) => {
             eprintln!("Tile yükleme hatası {url}: {error}");
-            return (coord, TileOutcome::Failed);
+            return (coord, issued, TileOutcome::Failed);
         }
     };
 
     if !response.status().is_success() {
         eprintln!("Tile HTTP hatası {url}: {}", response.status());
-        return (coord, TileOutcome::Failed);
+        return (coord, issued, TileOutcome::Failed);
     }
 
     let bytes = match response.bytes().await {
         Ok(bytes) => bytes,
         Err(error) => {
             eprintln!("Tile okuma hatası {url}: {error}");
-            return (coord, TileOutcome::Failed);
+            return (coord, issued, TileOutcome::Failed);
         }
     };
 
@@ -447,8 +478,8 @@ pub async fn fetch_tile(coord: TileCoord, epoch: TileEpoch) -> (TileCoord, TileO
     .flatten();
 
     match decoded {
-        Some(handle) => (coord, TileOutcome::Loaded(handle)),
+        Some(handle) => (coord, issued, TileOutcome::Loaded(handle)),
         // Çözme başarısız: gerçek bir hata, kuşak sorunu değil.
-        None => (coord, TileOutcome::Failed),
+        None => (coord, issued, TileOutcome::Failed),
     }
 }
