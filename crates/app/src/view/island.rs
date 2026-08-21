@@ -85,7 +85,9 @@ pub fn menu(_app: &App) -> Element<'_, Message> {
 
     container(
         container(content)
-            .padding(SPACE_XS)
+            // `SPACE_XS` (2 px) değil `SPACE_SM`: hover dolgusu kapsülün
+            // kenarlığına yapışıyordu. Adanın kendi kapsülü de `SPACE_SM`.
+            .padding(SPACE_SM)
             // `height` değil `center_y`: kapsül `ISLAND_HEIGHT` (44 px), içerik
             // ise 2*SPACE_XS + (CONTROL_HEIGHT - 2*SPACE_XS) = 36 px.
             // `Container` dikeyde varsayılan olarak üste yaslıyor, yani kalan
@@ -119,9 +121,13 @@ fn tab_button<'a>(label: &'a str, tab: Tab, active_tab: Tab) -> Element<'a, Mess
 /// Yüksekliği adanın iç dolgusu kadar kısaltılmış: çip kapsülü
 /// `ISLAND_HEIGHT` ve içindeki düğme tam `CONTROL_HEIGHT` olsaydı kapsülün
 /// kenarına yapışırdı.
+///
+/// Yatay dolgu açıkça veriliyor: `button`'ın varsayılanı hap silueti için dar,
+/// hover dolgusu metne çok yakın bitiyordu.
 fn menu_chip<'a>(label: &'a str, message: Option<Message>) -> Element<'a, Message> {
     button(text(label).size(FONT_SM).center())
-        .height(CONTROL_HEIGHT - 2.0 * SPACE_XS)
+        .height(CONTROL_HEIGHT - 2.0 * SPACE_SM)
+        .padding([0.0, SPACE_MD])
         .style(styles::ghost)
         .on_press_maybe(message)
         .into()

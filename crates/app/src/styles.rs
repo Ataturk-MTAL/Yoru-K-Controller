@@ -230,7 +230,12 @@ pub fn danger(theme: &Theme, status: button::Status) -> button::Style {
     filled(&t, status, fill, on_fill, t.is_dark.then_some(t.error))
 }
 
-/// Zemini olmayan buton — toolbar menü öğeleri.
+/// Zemini olmayan buton — adanın menü çipleri.
+///
+/// Yarıçap `RADIUS_FULL`: bu buton `styles::island` kapsülünün İÇİNDE yaşıyor
+/// ve o kapsül bir hap. `RADIUS_MD` ile hover dolgusu köşeli bir dikdörtgen
+/// olarak çiziliyor, kapsülün yuvarlak kenarına taşıyor ve iki farklı köşe
+/// yarıçapı üst üste biniyordu.
 pub fn ghost(theme: &Theme, status: button::Status) -> button::Style {
     let t = Tokens::for_theme(theme);
     let background = match status {
@@ -249,7 +254,7 @@ pub fn ghost(theme: &Theme, status: button::Status) -> button::Style {
         background,
         text_color,
         border: Border {
-            radius: RADIUS_MD.into(),
+            radius: RADIUS_FULL.into(),
             ..Border::default()
         },
         ..button::Style::default()
