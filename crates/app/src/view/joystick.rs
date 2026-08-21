@@ -5,7 +5,7 @@
 //! fare olaylarını mesaja çevirir.
 
 use iced::mouse;
-use iced::widget::canvas::{self, Frame, Geometry, Path, Stroke};
+use iced::widget::canvas::{self, Geometry, Path, Stroke};
 use iced::{Color, Point, Rectangle, Renderer, Size, Theme};
 
 use crate::message::Message;
@@ -47,13 +47,43 @@ const BAND_ALPHA: f32 = 0.08;
 /// Motor dururken bilek dolgusunun opaklığı (bkz. `knob_colors`).
 const KNOB_IDLE_ALPHA: f32 = 0.5;
 
-pub struct JoystickCanvas {
+/// Joystick çizimini belirleyen durumun tamamı.
+///
+/// `canvas_cache::Keyed` bunu karşılaştırıp önbelleği düşürüyor; buraya
+/// eklenmeyen bir alan çizimi etkiliyorsa kare bayat kalır. Bilek konumu `f32`
+/// ve `f32: !Eq` olduğu için bit deseniyle taşınıyor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct JoystickKey {
+    dx_bits: u32,
+    dy_bits: u32,
+    dragging: bool,
+    connected: bool,
+    motor_running: bool,
+    /// Tema, `Tokens::for_theme` üzerinden her rengi değiştiriyor.
+    dark: bool,
+}
+
+impl JoystickKey {
+    pub fn new(joystick: Joystick, connected: bool, motor_running: bool, dark: bool) -> Self {
+        Self {
+            dx_bits: joystick.dx.to_bits(),
+            dy_bits: joystick.dy.to_bits(),
+            dragging: joystick.dragging,
+            connected,
+            motor_running,
+            dark,
+        }
+    }
+}
+
+pub struct JoystickCanvas<'a> {
     pub joystick: Joystick,
     pub connected: bool,
     pub motor_running: bool,
+    pub cache: &'a canvas::Cache,
 }
 
-impl JoystickCanvas {
+impl JoystickCanvas<'_> {
     /// Halkanın merkezi ve yarıçapı — çizim ve olay işleme aynı hesabı kullanır.
     ///
     /// Bilek merkezi halka çizgisine kadar gidiyor, yani bileğin yarısı halkanın
@@ -108,7 +138,7 @@ impl JoystickCanvas {
     }
 }
 
-impl canvas::Program<Message> for JoystickCanvas {
+impl canvas::Program<Message> for JoystickCanvas<'_> {
     /// Sürükleme durumu `AppState` içinde tutulur — widget ağacında ikinci bir
     /// doğruluk kaynağı oluşmaz.
     type State = ();
@@ -164,6 +194,12 @@ impl canvas::Program<Message> for JoystickCanvas {
         }
     }
 
+    /// Geometri `canvas::Cache` üzerinden çizilir.
+    ///
+    /// `view` her mesaj turunda koşuyor; kamera açıkken bu saniyede ~30 kez
+    /// demek. Önbelleksiz sürümde halka, kılavuzlar, bantlar ve bilek her
+    /// turda yeniden tesselate ediliyordu — oysa hiçbiri motor telemetrisiyle
+    /// değişmiyor. Önbellek yalnızca `JoystickKey` değişince düşer.
     fn draw(
         &self,
         _state: &Self::State,
@@ -174,79 +210,80 @@ impl canvas::Program<Message> for JoystickCanvas {
     ) -> Vec<Geometry> {
         let t = Tokens::for_theme(theme);
         let (center, max_r) = Self::ring(bounds);
-        let mut frame = Frame::new(renderer, bounds.size());
 
-        // ── Halka zemini ────────────────────────────────
-        let ring = Path::circle(center, max_r);
-        frame.fill(&ring, t.surface_sunken);
-        frame.stroke(
-            &ring,
-            Stroke::default()
-                .with_width(LINE_WIDTH)
-                .with_color(if self.connected {
-                    Color {
-                        a: RING_ALPHA,
-                        ..t.success
-                    }
-                } else {
-                    t.outline
+        let geometry = self.cache.draw(renderer, bounds.size(), |frame| {
+            // ── Halka zemini ────────────────────────────────
+            let ring = Path::circle(center, max_r);
+            frame.fill(&ring, t.surface_sunken);
+            frame.stroke(
+                &ring,
+                Stroke::default()
+                    .with_width(LINE_WIDTH)
+                    .with_color(if self.connected {
+                        Color {
+                            a: RING_ALPHA,
+                            ..t.success
+                        }
+                    } else {
+                        t.outline
+                    }),
+            );
+
+            // ── Tolerans bantları (eksen snap görseli) ──────
+            let band = Color {
+                a: BAND_ALPHA,
+                ..t.outline_variant
+            };
+            let diameter = max_r * 2.0;
+            let band_size = diameter * SNAP_BAND;
+            frame.fill_rectangle(
+                Point::new(center.x - band_size / 2.0, center.y - max_r),
+                Size::new(band_size, diameter),
+                band,
+            );
+            frame.fill_rectangle(
+                Point::new(center.x - max_r, center.y - band_size / 2.0),
+                Size::new(diameter, band_size),
+                band,
+            );
+
+            // ── Kılavuz çizgileri ───────────────────────────
+            let guides = Path::new(|builder| {
+                builder.move_to(Point::new(center.x - max_r, center.y));
+                builder.line_to(Point::new(center.x + max_r, center.y));
+                builder.move_to(Point::new(center.x, center.y - max_r));
+                builder.line_to(Point::new(center.x, center.y + max_r));
+            });
+            frame.stroke(
+                &guides,
+                Stroke::default().with_width(LINE_WIDTH).with_color(Color {
+                    a: GUIDE_ALPHA,
+                    ..t.outline
                 }),
-        );
+            );
 
-        // ── Tolerans bantları (eksen snap görseli) ──────
-        let band = Color {
-            a: BAND_ALPHA,
-            ..t.outline_variant
-        };
-        let diameter = max_r * 2.0;
-        let band_size = diameter * SNAP_BAND;
-        frame.fill_rectangle(
-            Point::new(center.x - band_size / 2.0, center.y - max_r),
-            Size::new(band_size, diameter),
-            band,
-        );
-        frame.fill_rectangle(
-            Point::new(center.x - max_r, center.y - band_size / 2.0),
-            Size::new(diameter, band_size),
-            band,
-        );
+            // ── Merkez noktası ──────────────────────────────
+            frame.fill(
+                &Path::circle(center, CENTER_DOT / 2.0),
+                t.on_surface_variant,
+            );
 
-        // ── Kılavuz çizgileri ───────────────────────────
-        let guides = Path::new(|builder| {
-            builder.move_to(Point::new(center.x - max_r, center.y));
-            builder.line_to(Point::new(center.x + max_r, center.y));
-            builder.move_to(Point::new(center.x, center.y - max_r));
-            builder.line_to(Point::new(center.x, center.y + max_r));
+            // ── Bilek ───────────────────────────────────────
+            let knob_center = Point::new(center.x + self.joystick.dx, center.y - self.joystick.dy);
+            let knob = Path::circle(knob_center, KNOB_SIZE / 2.0);
+
+            let (knob_fill, knob_border, light) = self.knob_colors(&t);
+            frame.fill(&knob, knob_fill);
+            frame.stroke(
+                &knob,
+                Stroke::default()
+                    .with_width(LINE_WIDTH)
+                    .with_color(knob_border),
+            );
+            frame.fill(&Path::circle(knob_center, KNOB_LIGHT / 2.0), light);
         });
-        frame.stroke(
-            &guides,
-            Stroke::default().with_width(LINE_WIDTH).with_color(Color {
-                a: GUIDE_ALPHA,
-                ..t.outline
-            }),
-        );
 
-        // ── Merkez noktası ──────────────────────────────
-        frame.fill(
-            &Path::circle(center, CENTER_DOT / 2.0),
-            t.on_surface_variant,
-        );
-
-        // ── Bilek ───────────────────────────────────────
-        let knob_center = Point::new(center.x + self.joystick.dx, center.y - self.joystick.dy);
-        let knob = Path::circle(knob_center, KNOB_SIZE / 2.0);
-
-        let (knob_fill, knob_border, light) = self.knob_colors(&t);
-        frame.fill(&knob, knob_fill);
-        frame.stroke(
-            &knob,
-            Stroke::default()
-                .with_width(LINE_WIDTH)
-                .with_color(knob_border),
-        );
-        frame.fill(&Path::circle(knob_center, KNOB_LIGHT / 2.0), light);
-
-        vec![frame.into_geometry()]
+        vec![geometry]
     }
 
     fn mouse_interaction(

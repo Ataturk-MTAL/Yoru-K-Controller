@@ -13,9 +13,12 @@ use iced::Theme;
 
 use crate::backend::Backend;
 use crate::camera::Camera;
+use crate::canvas_cache::Keyed;
 use crate::map::MapState;
 use crate::message::{Modal, Tab};
 use crate::theme;
+use crate::view::joystick::JoystickKey;
+use crate::view::map_view::MapKey;
 
 /// Seri port hızı — Slint tarafında da sabitti (UI'da seçici yok).
 pub const BAUD_RATE: u32 = 115_200;
@@ -125,6 +128,12 @@ pub struct App {
     pub gps_lon: f32,
     pub gps_point_count: usize,
     pub map: MapState,
+
+    // ── Çizim önbellekleri ──────────────────────────────
+    // Model değil, render artefaktı; burada duruyorlar çünkü `canvas::Program`
+    // her `view` turunda yeniden kuruluyor ve önbellek turdan turu yaşamalı.
+    pub joystick_cache: Keyed<JoystickKey>,
+    pub map_cache: Keyed<MapKey>,
 }
 
 impl App {
@@ -178,6 +187,9 @@ impl App {
             gps_lon: 0.0,
             gps_point_count: 0,
             map: MapState::default(),
+
+            joystick_cache: Keyed::new(),
+            map_cache: Keyed::new(),
         }
     }
 

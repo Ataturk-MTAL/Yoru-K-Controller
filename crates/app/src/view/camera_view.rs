@@ -1,14 +1,14 @@
 //! Kamera görünümü — Slint `components/camera_view.slint` karşılığı.
 
 use iced::widget::{button, column, container, image, pick_list, row, stack, text};
-use iced::{Alignment, Color, ContentFit, Element, Fill, Theme};
+use iced::{Alignment, Color, ContentFit, Element, Fill, Padding, Theme};
 
 use crate::message::Message;
 use crate::state::App;
 use crate::styles;
 use crate::theme::{
     Tokens, CONTROL_HEIGHT, FIELD_PADDING_X, FIELD_PADDING_Y, FONT_LG, FONT_SM, RADIUS_MD,
-    RADIUS_SM, SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XS,
+    RADIUS_SM, SPACE_LG, SPACE_MD, SPACE_SM, SPACE_XS, TOP_STRIP_HEIGHT,
 };
 use crate::view::widgets::{connection_warning, icon_button, numeric};
 
@@ -151,7 +151,9 @@ fn badges(app: &App) -> Element<'_, Message> {
     container(notices)
         .align_right(Fill)
         .align_top(Fill)
-        .padding(SPACE_MD)
+        // Sağ üst köşede artık menü çipleri duruyor; rozetler onların altından
+        // başlıyor (bkz. `theme::TOP_STRIP_HEIGHT`).
+        .padding(Padding::new(SPACE_MD).top(TOP_STRIP_HEIGHT))
         .into()
 }
 
