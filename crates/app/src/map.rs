@@ -87,8 +87,8 @@ pub struct TileCoord {
 /// Kuyruk iki genişliğinde olduğu için sıradaki istekler artık bekliyor; zoom
 /// değişimi eski seviyenin tile'larını geçersiz kılsa bile o istekler kuyruğun
 /// başını tutmaya devam ederdi (`zoom_at` yalnızca `pending` kümesini temizler,
-/// uçmakta olan future'a ulaşamaz). Kuşak sayacı, park etmiş bir isteğin permit
-/// harcamadan önce kendi geçersizliğini görmesini sağlıyor.
+/// uçmakta olan future'a ulaşamaz). Kuşak sayacı, bayat bir isteğin kuyruğa hiç
+/// girmeden düşmesini sağlıyor.
 #[derive(Debug, Clone)]
 pub struct TileEpoch {
     current: Arc<AtomicU64>,
@@ -99,6 +99,25 @@ impl TileEpoch {
     fn is_stale(&self) -> bool {
         self.current.load(Ordering::Relaxed) != self.issued
     }
+}
+
+/// Bir tile isteğinin sonucu.
+///
+/// `Option<Handle>` yetmiyordu: "indirilemedi" ile "artık bu görünüme ait
+/// değil" aynı `None`'a düşüyor ve ikisi de `drop_pending`'e gidiyordu. Kuşak
+/// sayacı monotonik ama `coord.z` DEĞİL — kullanıcı z15'ten z16'ya çıkıp geri
+/// dönerse `coord.z == self.zoom` koruması "bu sonuç güncel" demiyor. O turda
+/// bayat bir sonuç, canlı bir isteği `pending`'den düşürüp `failed`'e yazıyor:
+/// sahte "Harita çevrimdışı" rozeti yanıyor ve tile bir sonraki kaydırmada
+/// ikinci kez isteniyor — yani eşzamanlılık sınırının korumaya çalıştığı
+/// sunucuya fazladan GET gidiyor.
+#[derive(Debug, Clone)]
+pub enum TileOutcome {
+    Loaded(iced_image::Handle),
+    /// İstek gerçekten başarısız oldu — iskelet çapraz işaretli çizilir.
+    Failed,
+    /// Kuşağı geçti; taze bir istek zaten uçuyor. Hiçbir şeye dokunulmamalı.
+    Stale,
 }
 
 pub struct MapState {
@@ -354,23 +373,27 @@ pub fn lat_lon_to_world(lat: f64, lon: f64, zoom: u32) -> (f64, f64) {
 /// Tek bir tile'ı indirir ve çözer.
 ///
 /// Hata durumunda `None` döner — harita eksik tile ile çalışmaya devam eder.
-pub async fn fetch_tile(
-    coord: TileCoord,
-    epoch: TileEpoch,
-) -> (TileCoord, Option<iced_image::Handle>) {
-    // Kuyruğa gir. `_permit` düşene kadar en fazla iki indirme uçar.
+pub async fn fetch_tile(coord: TileCoord, epoch: TileEpoch) -> (TileCoord, TileOutcome) {
+    // Kuyruğa girmeden önce: zoom bu future daha ilk kez uyanmadan değişmiş
+    // olabilir. Sırada beklemesinin anlamı yok, üstelik önündeki canlı
+    // indirmeleri geciktirir.
+    if epoch.is_stale() {
+        return (coord, TileOutcome::Stale);
+    }
+
+    // Kuyruğa gir. `permit` düşene kadar en fazla iki indirme uçar.
     let permit = match TILE_PERMITS.acquire().await {
         Ok(permit) => permit,
         // Semaphore yalnızca kapatılınca hata verir; bu uygulamada kapatan yok.
         Err(error) => {
             eprintln!("Tile kuyruğu kapandı: {error}");
-            return (coord, None);
+            return (coord, TileOutcome::Failed);
         }
     };
 
-    // Sıra beklerken zoom değişmiş olabilir — bu tile artık çizilmeyecek.
+    // Sıra beklerken de değişmiş olabilir.
     if epoch.is_stale() {
-        return (coord, None);
+        return (coord, TileOutcome::Stale);
     }
 
     let client = client();
@@ -388,20 +411,20 @@ pub async fn fetch_tile(
         Ok(response) => response,
         Err(error) => {
             eprintln!("Tile yükleme hatası {url}: {error}");
-            return (coord, None);
+            return (coord, TileOutcome::Failed);
         }
     };
 
     if !response.status().is_success() {
         eprintln!("Tile HTTP hatası {url}: {}", response.status());
-        return (coord, None);
+        return (coord, TileOutcome::Failed);
     }
 
     let bytes = match response.bytes().await {
         Ok(bytes) => bytes,
         Err(error) => {
             eprintln!("Tile okuma hatası {url}: {error}");
-            return (coord, None);
+            return (coord, TileOutcome::Failed);
         }
     };
 
@@ -423,5 +446,9 @@ pub async fn fetch_tile(
     .ok()
     .flatten();
 
-    (coord, decoded)
+    match decoded {
+        Some(handle) => (coord, TileOutcome::Loaded(handle)),
+        // Çözme başarısız: gerçek bir hata, kuşak sorunu değil.
+        None => (coord, TileOutcome::Failed),
+    }
 }
