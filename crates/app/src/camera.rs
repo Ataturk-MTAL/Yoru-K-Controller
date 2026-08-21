@@ -278,6 +278,17 @@ fn spawn_detection_worker(
             // Thread ne şekilde biterse bitsin (erken `return` dahil) bu
             // gönderici düşer ve `Camera::shutdown` beklemekten kurtulur.
             let _exit_guard = exit_tx;
+
+            // Model yüklemesinden ÖNCE: `YoloDetector::new` modeli diskte
+            // bulamazsa usls hub'ından indiriyor ve yavaş bağlantıda bu
+            // dakikalar sürebiliyor. Bayrak yalnızca döngü içinde okunsaydı,
+            // açılışın hemen ardından kapatan kullanıcı 2000 ms'yi tamamen
+            // bekler ve `Camera::shutdown` yine de zaman aşımına düşerdi —
+            // yani kapatmak istediğimiz ORT yarışı açık kalırdı.
+            if detection_shutdown.load(Ordering::Relaxed) {
+                return;
+            }
+
             let model_path = if std::path::Path::new(LOCAL_MODEL).exists() {
                 LOCAL_MODEL
             } else {

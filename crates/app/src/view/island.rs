@@ -86,7 +86,12 @@ pub fn menu(_app: &App) -> Element<'_, Message> {
     container(
         container(content)
             .padding(SPACE_XS)
-            .height(ISLAND_HEIGHT)
+            // `height` değil `center_y`: kapsül `ISLAND_HEIGHT` (44 px), içerik
+            // ise 2*SPACE_XS + (CONTROL_HEIGHT - 2*SPACE_XS) = 36 px.
+            // `Container` dikeyde varsayılan olarak üste yaslıyor, yani kalan
+            // 8 px'in tamamı alta düşüyor ve çipler kapsülün üst kenarına
+            // yapışıyordu.
+            .center_y(ISLAND_HEIGHT)
             .style(styles::island),
     )
     .align_right(Fill)

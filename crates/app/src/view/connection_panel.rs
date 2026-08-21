@@ -46,17 +46,23 @@ pub fn view(app: &App) -> Element<'_, Message> {
 /// Etiket `SERIAL_LABEL`'dan geliyor: mod düğmesi ile alttaki durum satırı aynı
 /// bağlantıdan söz ediyor, ikisinin farklı yazması iki ayrı şey izlenimi verir.
 fn mode_selector(app: &App) -> Element<'_, Message> {
+    // Bağlantı kurulmuşken (ya da kurulurken) kilitli: aksi hâlde seri porta
+    // bağlıyken "TCP/IP"ye basmak yalnızca `is_serial` bayrağını çeviriyor ve
+    // hem bu paneldeki durum satırı hem alt durum çubuğu "TCP/IP — Bağlı"
+    // yazıyor. Açık olan hâlâ seri port; arayüz hattın gerçeğinden ayrılıyor.
+    let locked = app.connected || app.connecting;
+
     row![
         button(text(SERIAL_LABEL).size(FONT_SM).center())
             .width(Fill)
             .height(ROW_HEIGHT)
             .style(styles::segment(app.is_serial))
-            .on_press(Message::SerialModeSelected(true)),
+            .on_press_maybe((!locked).then_some(Message::SerialModeSelected(true))),
         button(text("TCP/IP").size(FONT_SM).center())
             .width(Fill)
             .height(ROW_HEIGHT)
             .style(styles::segment(!app.is_serial))
-            .on_press(Message::SerialModeSelected(false)),
+            .on_press_maybe((!locked).then_some(Message::SerialModeSelected(false))),
     ]
     .spacing(SPACE_SM)
     .into()

@@ -16,11 +16,17 @@ use transport::RobotEvent;
 
 use crate::backend;
 use crate::camera::{self, CameraUpdate};
-use crate::map;
+use crate::map::{self, TileOutcome};
 use crate::message::{Dir, Message, Step, Tab};
 use crate::state::{App, CameraChoice, BAUD_RATE, INTERVALS_MS};
 
 pub fn update(app: &mut App, message: Message) -> Task<Message> {
+    // Modal açıkken klavye, farenin geçemediği yerden geçmemeli
+    // (bkz. `Message::blocked_by_modal`).
+    if app.modal.is_some() && message.blocked_by_modal() {
+        return Task::none();
+    }
+
     match message {
         // ── Bağlantı ────────────────────────────────────
         Message::SerialModeSelected(is_serial) => {
@@ -144,6 +150,13 @@ pub fn update(app: &mut App, message: Message) -> Task<Message> {
             app.backend.send_interval_ms.store(ms, Ordering::Relaxed);
             Task::none()
         }
+
+        // `motor_control::peripheral_row` kapısı — ikisi de robota paket
+        // gönderiyor. Kapı olmadan `l`/`b` bağlantı yokken arayüz durumunu
+        // çeviriyor ama paket hiçbir yere gitmiyordu: sonra bağlanınca durum
+        // çubuğu "Fren" yazıyor, robotta fren açık değil. Yanlış bir güvenlik
+        // okuması; `RobotResponse::Brake` gelmedikçe kendiliğinden düzelmiyor.
+        Message::LightToggled | Message::BrakeToggled if !app.connected => Task::none(),
 
         Message::LightToggled => {
             let on = !app.light_on;
@@ -285,6 +298,15 @@ pub fn update(app: &mut App, message: Message) -> Task<Message> {
         }
 
         Message::IntervalStepped(step) => {
+            // `motor_control::interval_row` kapısı (`editable = !motor_running`).
+            // Kapı olmadan `[`/`]` motor ÇALIŞIRKEN gönderim periyodunu
+            // değiştiriyordu: `IntervalSelected` `backend.send_interval_ms`
+            // atomiğine yazıyor, onu da robota hız paketi akıtan
+            // `spawn_periodic_send` okuyor. 10 ms'den 50 ms'ye çıkmak, tuş
+            // bırakmayla robotun onu görmesi arasındaki gecikmeyi beşe katlar.
+            if app.motor_running {
+                return Task::none();
+            }
             let current = INTERVALS_MS
                 .iter()
                 .position(|ms| *ms == app.send_interval_ms)
@@ -431,15 +453,21 @@ pub fn update(app: &mut App, message: Message) -> Task<Message> {
             request_tiles(app)
         }
 
-        Message::TileLoaded(coord, Some(handle)) => {
+        Message::TileLoaded(coord, TileOutcome::Loaded(handle)) => {
             app.map.insert_tile(coord, handle);
             Task::none()
         }
 
-        Message::TileLoaded(coord, None) => {
+        Message::TileLoaded(coord, TileOutcome::Failed) => {
             app.map.drop_pending(coord);
             Task::none()
         }
+
+        // Kuşağı geçmiş sonuç hiçbir şeye dokunmaz. `drop_pending` çağırmak,
+        // aynı tile için uçmakta olan TAZE isteği `pending`'den düşürüp
+        // `failed`'e yazardı: sahte "Harita çevrimdışı" rozeti ve bir sonraki
+        // kaydırmada aynı tile için ikinci bir GET.
+        Message::TileLoaded(_, TileOutcome::Stale) => Task::none(),
 
         Message::GpsToggled => {
             // `map_view::gps_button` kapısı — paket gönderiyor, bağlantı şart.
@@ -509,8 +537,8 @@ fn request_tiles(app: &mut App) -> Task<Message> {
         return Task::none();
     }
 
-    // Kuşak, `fetch_tile` içindeki kuyruk için: sıra beklerken zoom değişirse
-    // istek permit harcamadan düşer (`map::TileEpoch`).
+    // Kuşak, `fetch_tile` içindeki kuyruk için: zoom değişirse istek kuyruğa
+    // hiç girmeden `TileOutcome::Stale` döner (`map::TileEpoch`).
     let epoch = app.map.epoch();
 
     Task::batch(missing.into_iter().map(move |coord| {
