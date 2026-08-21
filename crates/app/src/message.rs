@@ -130,7 +130,7 @@ pub enum Message {
     MapZoomSelected(u32),
     /// Canvas boyutu değişti — görünür tile kümesi yeniden hesaplanır.
     MapResized(Size),
-    TileLoaded(TileCoord, TileOutcome),
+    TileLoaded(TileCoord, u64, TileOutcome),
     GpsToggled,
 
     // ── Robot olayları (transport aboneliği) ────────────
