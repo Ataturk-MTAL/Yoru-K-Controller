@@ -357,7 +357,9 @@ git checkout legacy/slint-ui
 
 ## Lisans
 
-MIT
+[Apache License 2.0](LICENSE) — Copyright 2026 Toroslar Atatürk MTAL Yörü-K Teknoloji Takımı.
+
+Atıf ve değişiklik bildirimi koşulları için [`NOTICE`](NOTICE) dosyasına bakın.
 
 ---
 
