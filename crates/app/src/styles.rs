@@ -11,7 +11,7 @@
 use iced::widget::{button, container, pick_list, text, text_input};
 use iced::{Background, Border, Color, Theme};
 
-use crate::theme::{Tokens, RADIUS_LG, RADIUS_MD, RADIUS_SM};
+use crate::theme::{Tokens, RADIUS_FULL, RADIUS_LG, RADIUS_MD, RADIUS_SM};
 
 /// Durum katmanı oranları — M3'ün hover %8 / pressed %10 basamakları.
 ///
@@ -122,6 +122,32 @@ pub fn overlay_chip(radius: f32) -> impl Fn(&Theme) -> container::Style {
             },
             ..container::Style::default()
         }
+    }
+}
+
+/// Yüzen ada / menü çipi kapsülü.
+///
+/// `overlay_chip` DEĞİL: o çip yarı saydam siyah zemin + `on_overlay` metniyle
+/// kamera görüntüsünün üstünde okunurluk için var ve iki temada da koyu.
+/// Ada bir kontrol kabı — içindeki sekmeler ve tema düğmesi kendi tema
+/// renklerini taşıyor; açık temada koyu bir kapsülün içinde açık düğmeler
+/// duruyor olurdu.
+///
+/// Kenarlık `outline`: WCAG 2.2 SC 1.4.11 için zaten 3:1'e çekilmiş ton
+/// (bkz. `theme::Tokens::outline`), ve adanın altında kamera görüntüsü gibi
+/// öngörülemez bir zemin var — kapsülün nerede bittiği yalnızca bu çizgiden
+/// okunuyor.
+pub fn island(theme: &Theme) -> container::Style {
+    let t = Tokens::for_theme(theme);
+    container::Style {
+        text_color: Some(t.on_surface),
+        background: Some(Background::Color(t.surface_container_high)),
+        border: Border {
+            radius: RADIUS_FULL.into(),
+            width: 1.0,
+            color: t.outline,
+        },
+        ..container::Style::default()
     }
 }
 

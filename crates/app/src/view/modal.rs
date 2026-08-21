@@ -5,7 +5,7 @@
 //! `daemon` mimarisi gerektirir; aynı görsel içerik burada `stack!` üzerine
 //! bindirilen bir katmanla veriliyor.
 
-use iced::widget::{button, column, container, mouse_area, row, text, Space};
+use iced::widget::{button, column, container, mouse_area, row, scrollable, text, Space};
 use iced::{Alignment, Background, Element, Fill, Theme};
 
 use crate::message::{Message, Modal};
@@ -23,17 +23,67 @@ const KEY_HEIGHT: f32 = 28.0;
 /// ölçüler gibi adlandırılmış sabitten gelsin diye burada.
 const CLOSE_BUTTON_WIDTH: f32 = 120.0;
 
-/// Klavye kısayolları — Slint listesine WASD satırları da eklendi.
-const SHORTCUTS: [(&str, &str); 9] = [
-    ("W / ↑", "İleri"),
-    ("S / ↓", "Geri"),
-    ("A / ←", "Sol dönüş"),
-    ("D / →", "Sağ dönüş"),
-    ("Space", "Acil durdurma"),
-    ("1 / 2 / 3", "Vites seç"),
-    ("L", "Işık aç/kapat"),
-    ("B", "Fren aç/kapat"),
-    ("C / M", "Kamera / Harita sekmesi"),
+/// Kısayol listesinin üst yükseklik sınırı.
+///
+/// Liste dokuz satırdan yirmi ikiye çıktı; sınır olmadan panel en küçük
+/// pencerede (768 px) ekranın dışına taşıyor ve `Kapat` düğmesi görünmüyordu.
+const SHORTCUT_LIST_MAX_HEIGHT: f32 = 420.0;
+
+/// Klavye kısayolları, işlev kümelerine ayrılmış.
+///
+/// Düz bir liste dokuz satırda okunuyordu; yirmi ikide okunmuyor. Başlıklar
+/// aramayı ikiye indiriyor: önce "hangi küme", sonra "hangi tuş".
+///
+/// Tuş seçiminin tek kuralı sürüş harflerinden (W/A/S/D) uzak durmak — onlar
+/// basılı tutulan tuşlar, üzerlerine ikinci bir anlam binemez.
+const SHORTCUT_GROUPS: [(&str, &[(&str, &str)]); 5] = [
+    (
+        "Sürüş",
+        &[
+            ("W / ↑", "İleri"),
+            ("S / ↓", "Geri"),
+            ("A / ←", "Sol dönüş"),
+            ("D / →", "Sağ dönüş"),
+            ("Space", "Acil durdurma"),
+        ],
+    ),
+    (
+        "Motor",
+        &[
+            ("R", "Motor başlat"),
+            ("1 / 2 / 3", "Vites seç"),
+            ("[ / ]", "Gönderim aralığı − / +"),
+            ("L", "Işık aç/kapat"),
+            ("B", "Fren aç/kapat"),
+            (", / .", "Sol / Sağ ters çevir"),
+        ],
+    ),
+    (
+        "Bağlantı",
+        &[
+            ("Enter", "Bağlan / Bağlantıyı kes"),
+            ("X", "Seri Port ↔ TCP-IP"),
+            ("F5", "Port ve kamera listelerini yenile"),
+        ],
+    ),
+    (
+        "Kamera ve harita",
+        &[
+            ("V", "Kamera başlat / durdur"),
+            ("N", "Nesne tespiti aç/kapat"),
+            ("G", "GPS başlat / durdur"),
+            ("+ / −", "Zoom (Harita sekmesinde)"),
+        ],
+    ),
+    (
+        "Görünüm",
+        &[
+            ("C / M", "Kamera / Harita sekmesi"),
+            ("T", "Tema değiştir"),
+            ("?", "Bu pencere"),
+            ("Esc", "Pencereyi kapat"),
+        ],
+    ),
 ];
 
 pub fn view(modal: Modal) -> Element<'static, Message> {
@@ -88,47 +138,70 @@ fn about() -> Element<'static, Message> {
 }
 
 fn shortcuts() -> Element<'static, Message> {
+    let mut list = column![].spacing(SPACE_MD).width(Fill);
+
+    for (index, (group, entries)) in SHORTCUT_GROUPS.iter().enumerate() {
+        // İlk başlıktan önce ayırıcı yok: onun üstünde zaten modal başlığının
+        // ayırıcısı duruyor, iki çizgi üst üste geliyordu.
+        if index > 0 {
+            list = list.push(separator());
+        }
+        list = list.push(
+            text(*group)
+                .size(FONT_SM)
+                .style(styles::text_tertiary)
+                .width(Fill),
+        );
+        for (key, description) in entries.iter() {
+            list = list.push(shortcut_row(key, description));
+        }
+    }
+
     // Başlık puntosu `about()` ile aynı: ikisi de modal başlığı rolünde.
-    let mut content = column![text("Klavye Kısayolları")
-        .size(FONT_XL)
-        .style(styles::text_primary)]
+    let content = column![
+        text("Klavye Kısayolları")
+            .size(FONT_XL)
+            .style(styles::text_primary),
+        separator(),
+        // Liste kaydırılabilir, `Kapat` düğmesi kaydırmanın dışında: düğme
+        // listenin sonunda olsaydı, kapatmak için sonuna kadar kaydırmak
+        // gerekiyordu.
+        container(scrollable(list)).max_height(SHORTCUT_LIST_MAX_HEIGHT),
+        Space::new().height(SPACE_MD),
+        close_button(),
+    ]
     .spacing(SPACE_MD)
     .align_x(Alignment::Center);
 
-    content = content.push(separator());
-
-    for (key, description) in SHORTCUTS {
-        content = content.push(
-            row![
-                // Tuşun kendisi listenin tarama hedefi: kullanıcı açıklamayı
-                // değil "hangi tuş" sorusunu arıyor. Bu yüzden en az açıklama
-                // kadar büyük (FONT_MD) ve sabit genişlikli — tuş adları kutu
-                // içinde aynı ızgaraya oturmalı, "W / ↑" ile "1 / 2 / 3" arası
-                // oransal fontta her satırda başka yerde bitiyordu.
-                container(
-                    text(key)
-                        .font(theme::mono())
-                        .size(FONT_MD)
-                        .center()
-                        .style(styles::text_accent)
-                )
-                .width(KEY_WIDTH)
-                .height(KEY_HEIGHT)
-                .style(styles::sunken),
-                text(description)
-                    .size(FONT_MD)
-                    .style(styles::text_secondary),
-            ]
-            .spacing(SPACE_MD)
-            .align_y(Alignment::Center)
-            .width(Fill),
-        );
-    }
-
-    content = content.push(Space::new().height(SPACE_MD));
-    content = content.push(close_button());
-
     panel(content)
+}
+
+/// Tek kısayol satırı — tuş kutusu + açıklama.
+fn shortcut_row(key: &'static str, description: &'static str) -> Element<'static, Message> {
+    row![
+        // Tuşun kendisi listenin tarama hedefi: kullanıcı açıklamayı değil
+        // "hangi tuş" sorusunu arıyor. Bu yüzden en az açıklama kadar büyük
+        // (FONT_MD) ve sabit genişlikli — tuş adları kutu içinde aynı ızgaraya
+        // oturmalı, "W / ↑" ile "1 / 2 / 3" arası oransal fontta her satırda
+        // başka yerde bitiyordu.
+        container(
+            text(key)
+                .font(theme::mono())
+                .size(FONT_MD)
+                .center()
+                .style(styles::text_accent)
+        )
+        .width(KEY_WIDTH)
+        .height(KEY_HEIGHT)
+        .style(styles::sunken),
+        text(description)
+            .size(FONT_MD)
+            .style(styles::text_secondary),
+    ]
+    .spacing(SPACE_MD)
+    .align_y(Alignment::Center)
+    .width(Fill)
+    .into()
 }
 
 /// Ortak kart çerçevesi.

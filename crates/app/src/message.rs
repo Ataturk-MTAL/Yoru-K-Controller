@@ -26,6 +26,13 @@ pub enum Modal {
     Shortcuts,
 }
 
+/// Ayrık bir listede bir adım — gönderim aralığı ve harita zoom'u için.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Step {
+    Down,
+    Up,
+}
+
 /// Klavye sürüş yönü — WASD ve ok tuşları aynı yöne düşer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Dir {
@@ -70,6 +77,29 @@ pub enum Message {
     DirPressed(Dir),
     DirReleased(Dir),
     EmergencyStop,
+
+    // ── Kısayol niyetleri ───────────────────────────────
+    //
+    // `main::hotkeys` bir **fn pointer** olmak zorunda (`event::listen_with`
+    // yakalayan closure kabul etmiyor), yani abonelik `App`'i göremiyor.
+    // Duruma bağlı kısayollar bu yüzden "ne istendi"yi bildiriyor, "ne
+    // yapılacak"a `update` karar veriyor. Kısayolun düğmeyle aynı kapılardan
+    // geçmesi de böyle garanti altına alınıyor: düğme `on_press_maybe` ile
+    // kilitliyken kısayol robota paket göndermemeli.
+    /// Enter — bağlıysa keser, değilse bağlanır.
+    ConnectionToggleRequested,
+    /// F5 — port ve kamera listelerini birlikte yeniler.
+    RefreshRequested,
+    /// R — motoru başlatır (durdurma zaten `Space`'te).
+    MotorStartRequested,
+    /// V — kamerayı açar ya da kapatır.
+    CameraToggleRequested,
+    /// X — Seri Port ↔ TCP-IP.
+    TransportToggleRequested,
+    /// `[` / `]` — gönderim aralığında bir adım.
+    IntervalStepped(Step),
+    /// `−` / `+` — harita zoom'u; yalnızca Harita sekmesinde çalışır.
+    MapZoomStepped(Step),
 
     // ── Görünüm ─────────────────────────────────────────
     TabSelected(Tab),

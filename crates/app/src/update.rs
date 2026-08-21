@@ -17,8 +17,8 @@ use transport::RobotEvent;
 use crate::backend;
 use crate::camera::{self, CameraUpdate};
 use crate::map;
-use crate::message::{Dir, Message};
-use crate::state::{App, CameraChoice, BAUD_RATE};
+use crate::message::{Dir, Message, Step, Tab};
+use crate::state::{App, CameraChoice, BAUD_RATE, INTERVALS_MS};
 
 pub fn update(app: &mut App, message: Message) -> Task<Message> {
     match message {
@@ -228,6 +228,86 @@ pub fn update(app: &mut App, message: Message) -> Task<Message> {
             Task::none()
         }
 
+        // ── Kısayol niyetleri ───────────────────────────
+        //
+        // Hepsi mevcut mesajlara devrediyor; kopyalanan tek şey **kapı**, yani
+        // düğmenin `on_press_maybe` koşulu. Kapılar burada tekrar yazılmasaydı
+        // klavye, düğmenin kilitli olduğu durumlarda robota paket gönderirdi.
+        Message::ConnectionToggleRequested => {
+            if app.connected {
+                return update(app, Message::DisconnectPressed);
+            }
+            // `connection_panel::connect_button`'ün kapısı: bağlanma sürerken
+            // ikinci basış ikinci bir bağlantı denemesi başlatır.
+            if app.connecting || !app.can_connect() {
+                return Task::none();
+            }
+            update(app, Message::ConnectPressed)
+        }
+
+        // İki listeyi birlikte yeniliyor: hangisinin tazeleneceği aktif sekmeye
+        // bağlı olsaydı, yan panel her sekmede görünür olduğu için Kamera
+        // sekmesindeyken port listesi kısayolsuz kalırdı.
+        Message::RefreshRequested => Task::batch([
+            update(app, Message::PortsRefreshRequested),
+            update(app, Message::CamerasRefreshRequested),
+        ]),
+
+        Message::MotorStartRequested => {
+            // `motor_control::motor_button` kapısı.
+            if !app.connected || app.motor_running {
+                return Task::none();
+            }
+            update(app, Message::StartPressed)
+        }
+
+        Message::CameraToggleRequested => {
+            // `camera_view` kapısı: açılış sırasında ne başlat ne durdur.
+            if app.camera_starting {
+                return Task::none();
+            }
+            if app.camera_running {
+                return update(app, Message::CameraStopPressed);
+            }
+            if app.selected_camera.is_none() {
+                return Task::none();
+            }
+            update(app, Message::CameraStartPressed)
+        }
+
+        Message::TransportToggleRequested => {
+            // Bağlıyken taşıma biçimini değiştirmek arayüzü hattın gerçeğinden
+            // ayırır: "TCP-IP" yazarken açık olan seri port olurdu.
+            if app.connected || app.connecting {
+                return Task::none();
+            }
+            update(app, Message::SerialModeSelected(!app.is_serial))
+        }
+
+        Message::IntervalStepped(step) => {
+            let current = INTERVALS_MS
+                .iter()
+                .position(|ms| *ms == app.send_interval_ms)
+                .unwrap_or(0);
+            let Some(next) = step_index(current, step, INTERVALS_MS.len()) else {
+                return Task::none();
+            };
+            update(app, Message::IntervalSelected(INTERVALS_MS[next]))
+        }
+
+        // Zoom yalnızca Harita sekmesinde: `+`/`−` Kamera sekmesindeyken de
+        // çalışsaydı, görünmeyen bir haritanın zoom'u sessizce değişirdi.
+        Message::MapZoomStepped(step) => {
+            if app.tab != Tab::Map {
+                return Task::none();
+            }
+            let zoom = match step {
+                Step::Up => app.map.zoom.saturating_add(1),
+                Step::Down => app.map.zoom.saturating_sub(1),
+            };
+            update(app, Message::MapZoomSelected(zoom))
+        }
+
         // ── Görünüm ─────────────────────────────────────
         Message::TabSelected(tab) => {
             app.tab = tab;
@@ -310,6 +390,10 @@ pub fn update(app: &mut App, message: Message) -> Task<Message> {
         // "açık" göstermek, çalışan bir tespit varmış izlenimi verir.
         Message::DetectionToggled if app.detection_error.is_some() => Task::none(),
 
+        // Düğme yalnızca kamera çalışırken çiziliyor; `n` kısayolu o koşulu
+        // görmediği için kapı burada tekrarlanıyor.
+        Message::DetectionToggled if !app.camera_running => Task::none(),
+
         Message::DetectionToggled => {
             let enabled = !app.detection_enabled;
             app.detection_enabled = enabled;
@@ -358,6 +442,12 @@ pub fn update(app: &mut App, message: Message) -> Task<Message> {
         }
 
         Message::GpsToggled => {
+            // `map_view::gps_button` kapısı — paket gönderiyor, bağlantı şart.
+            // Düğme zaten kilitli; kapı burada da olmalı çünkü `g` kısayolu
+            // düğmenin kilidini görmez.
+            if !app.connected {
+                return Task::none();
+            }
             let enabled = !app.gps_active;
             let packet = gps_enable_packet(enabled);
             info!(cmd = "GPS", on = enabled, pkt = ?packet, "GPS yayın komutu gönderiliyor");
@@ -378,7 +468,10 @@ pub fn update(app: &mut App, message: Message) -> Task<Message> {
             info!(cmd = "DURDUR", pkt = ?packet, "Kapanış: motor durdurma komutu gönderiliyor");
             app.backend.send(packet);
             stop_motor(app);
-            app.camera.stop();
+            // `stop()` değil `shutdown()`: kamera thread'inin yanında tespit
+            // işçisi de sonlandırılmalı, yoksa ONNX Runtime'ın global yıkımı
+            // canlı bir çıkarımla yarışıyor (bkz. `Camera::shutdown`).
+            app.camera.shutdown();
             iced::exit()
         }
 
@@ -396,6 +489,19 @@ pub fn update(app: &mut App, message: Message) -> Task<Message> {
     }
 }
 
+/// Ayrık bir listede bir adım — sınırda `None`.
+///
+/// Sarmalama yok: `]`'e basılı tutmak en yüksek aralıkta kalır, en düşüğe
+/// atlamaz. Gönderim aralığı sürüş hissini doğrudan değiştiriyor, sınırda
+/// başa dönmek istenmeyen bir sıçrama olur.
+fn step_index(current: usize, step: Step, len: usize) -> Option<usize> {
+    match step {
+        Step::Up if current + 1 < len => Some(current + 1),
+        Step::Down if current > 0 => Some(current - 1),
+        _ => None,
+    }
+}
+
 /// Görünür alandaki eksik tile'lar için indirme görevleri üretir.
 fn request_tiles(app: &mut App) -> Task<Message> {
     let missing = app.map.take_missing_tiles();
@@ -403,8 +509,12 @@ fn request_tiles(app: &mut App) -> Task<Message> {
         return Task::none();
     }
 
-    Task::batch(missing.into_iter().map(|coord| {
-        Task::perform(map::fetch_tile(coord), |(coord, handle)| {
+    // Kuşak, `fetch_tile` içindeki kuyruk için: sıra beklerken zoom değişirse
+    // istek permit harcamadan düşer (`map::TileEpoch`).
+    let epoch = app.map.epoch();
+
+    Task::batch(missing.into_iter().map(move |coord| {
+        Task::perform(map::fetch_tile(coord, epoch.clone()), |(coord, handle)| {
             Message::TileLoaded(coord, handle)
         })
     }))

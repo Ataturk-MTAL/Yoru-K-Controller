@@ -5,6 +5,7 @@
 
 mod backend;
 mod camera;
+mod canvas_cache;
 mod map;
 mod message;
 mod state;
@@ -18,7 +19,7 @@ use iced::{event, mouse, window, Event, Font, Size, Subscription, Task};
 
 use backend::Backend;
 use camera::Camera;
-use message::{Dir, Message, Modal, Tab};
+use message::{Dir, Message, Modal, Step, Tab};
 use state::App;
 
 /// Başlangıç pencere boyutu (Slint: `preferred-width/height`).
@@ -56,6 +57,7 @@ fn main() -> iced::Result {
             // Kapatma isteğini kendimiz karşılıyoruz: çıkmadan önce robota
             // STOP gitmeli, yoksa motor son hızında kalır.
             exit_on_close_request: false,
+            platform_specific: platform_settings(),
             ..window::Settings::default()
         })
         .font(include_bytes!("../assets/fonts/Saira-Regular.ttf").as_slice())
@@ -64,6 +66,45 @@ fn main() -> iced::Result {
         .font(include_bytes!("../assets/fonts/SpaceMono-Regular.ttf").as_slice())
         .default_font(Font::with_name("Saira"))
         .run()
+}
+
+/// macOS: içerik alanı başlık çubuğunun altına uzatılır.
+///
+/// Uygulamanın kendi araç çubuğu kaldırıldı (bkz. `view::island`); üstte tek
+/// şerit kalsın diye o şeridin işini sistemin başlık çubuğu görüyor. Üç ayar
+/// birlikte çalışıyor:
+///
+/// * `fullsize_content_view` — içerik pencerenin en üstünden başlar
+/// * `titlebar_transparent` — başlık çubuğunun zemini içeriği örtmez
+/// * `title_hidden` — "Yörü-K Kontrolcü" yazısı gizlenir, yoksa ortada duran
+///   ada ile aynı yere düşerdi
+///
+/// Trafik ışıkları (kapat/küçült/tam ekran) yerinde kalır ve ilk ~28 px hâlâ
+/// sistemin sürükleme bandıdır — bu yüzden hiçbir kontrol oraya konmuyor
+/// (`theme::TITLEBAR_INSET`). Pencereyi sürükleme yeteneği de böyle korunuyor:
+/// kendi `window::drag` bölgemizi yazsaydık, harita canvas'ının üstünde fare
+/// olaylarını yutan bir katman doğardı.
+#[cfg(target_os = "macos")]
+fn platform_settings() -> window::settings::PlatformSpecific {
+    window::settings::PlatformSpecific {
+        title_hidden: true,
+        titlebar_transparent: true,
+        fullsize_content_view: true,
+    }
+}
+
+/// Diğer platformlar: sistem başlık çubuğu olduğu gibi kalır.
+///
+/// Windows'ta iced başlık çubuğuna içerik koymaya izin vermiyor
+/// (`iced_core::window::settings::windows::PlatformSpecific` yalnızca
+/// `drag_and_drop`, `skip_taskbar`, `undecorated_shadow`, `corner_preference`
+/// sunuyor); aynı görünüm için `decorations: false` ile kendi başlık şeridimizi
+/// çizmek gerekirdi — snap, çift tıkla büyüt ve sistem menüsü dahil. Kalıcı bir
+/// bakım yükü; ada zaten her platformda yüzüyor, tek fark üstünde sistemin
+/// kendi şeridinin durması.
+#[cfg(not(target_os = "macos"))]
+fn platform_settings() -> window::settings::PlatformSpecific {
+    window::settings::PlatformSpecific::default()
 }
 
 /// Boot — arka plan thread'lerini kurar, port ve kamera listelerini yükler.
@@ -150,6 +191,10 @@ fn on_key_down(key: Key) -> Option<Message> {
     match key {
         Key::Named(Named::Space) => Some(Message::EmergencyStop),
         Key::Named(Named::Escape) => Some(Message::ModalClosed),
+        // Bağlan/kes ve liste yenileme, masaüstü uygulamalarının alışılmış
+        // tuşlarında: Enter birincil eylemi onaylar, F5 yeniler.
+        Key::Named(Named::Enter) => Some(Message::ConnectionToggleRequested),
+        Key::Named(Named::F5) => Some(Message::RefreshRequested),
         Key::Character(c) => match c.as_str() {
             "1" => Some(Message::GearSelected(1)),
             "2" => Some(Message::GearSelected(2)),
@@ -159,6 +204,25 @@ fn on_key_down(key: Key) -> Option<Message> {
             "c" | "C" => Some(Message::TabSelected(Tab::Camera)),
             "m" | "M" => Some(Message::TabSelected(Tab::Map)),
             "t" | "T" => Some(Message::ThemeToggled),
+            // Sürüş harflerinden (W/A/S/D) uzak duran, kalan serbest harfler.
+            // "Motor BAŞLAT" için `m` alınamazdı: `m` Harita sekmesi.
+            "r" | "R" => Some(Message::MotorStartRequested),
+            "v" | "V" => Some(Message::CameraToggleRequested),
+            "n" | "N" => Some(Message::DetectionToggled),
+            "g" | "G" => Some(Message::GpsToggled),
+            "x" | "X" => Some(Message::TransportToggleRequested),
+            // Gönderim aralığı köşeli parantezlerde; `−`/`+` haritanın zoom'u.
+            // İkisi de aynı tuşlara düşseydi, panelde bir sayı harita
+            // sekmesinde başka bir sayıyı değiştiriyor olurdu.
+            "[" => Some(Message::IntervalStepped(Step::Down)),
+            "]" => Some(Message::IntervalStepped(Step::Up)),
+            // `=` de kabul: klavye düzenlerinin çoğunda `+` Shift'li.
+            "+" | "=" => Some(Message::MapZoomStepped(Step::Up)),
+            "-" => Some(Message::MapZoomStepped(Step::Down)),
+            // Sol/sağ ters — tuşların klavyedeki sol/sağ sırası, kontrolün
+            // sol/sağ motoruyla eşleşiyor.
+            "," => Some(Message::ReverseLeftToggled),
+            "." => Some(Message::ReverseRightToggled),
             "?" => Some(Message::ModalOpened(Modal::Shortcuts)),
             _ => None,
         },

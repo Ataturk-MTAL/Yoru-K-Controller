@@ -7,6 +7,7 @@
 //! Kare düşürme iki yerde: kamera thread'i kanal doluyken decode'u atlar,
 //! pump ise UI kanalı doluyken kareyi düşürür. Böylece görüntü hep anlık kalır.
 
+use std::convert::Infallible;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex, OnceLock};
 use std::thread;
@@ -27,6 +28,13 @@ const DETECTION_INTERVAL_MS: u64 = 300;
 const UI_QUEUE: usize = 2;
 /// Yerel model dosyası; yoksa usls hub'dan indirilir.
 const LOCAL_MODEL: &str = "v26-n-det.onnx";
+/// Kapanışta tespit işçisinin çıkmasına tanınan süre.
+///
+/// Ölçülen tek çıkarım ~659 ms sürüyor (`[detection] inference: 659ms`); işçi
+/// kapanış anında çıkarımın içindeyse onun bitmesini beklemek gerekiyor.
+/// Boştaysa 100 ms'lik uykudan hemen uyanıp çıkar, yani bu süre tipik kapanışta
+/// harcanmaz — yalnızca üst sınır.
+const DETECTION_SHUTDOWN_WAIT: Duration = Duration::from_millis(2000);
 
 /// Kamera hattından UI'a giden güncellemeler.
 #[derive(Debug, Clone)]
@@ -56,6 +64,13 @@ pub struct Camera {
     /// Aktif kamera thread'inin durdurma bayrağı.
     stop_flag: Mutex<Option<Arc<AtomicBool>>>,
     detection_enabled: Arc<AtomicBool>,
+    /// Tespit işçisine "döngüden çık" der (bkz. `shutdown`).
+    detection_shutdown: Arc<AtomicBool>,
+    /// İşçi çıkınca kopan kanal — kapanış el sıkışması.
+    ///
+    /// Hiçbir zaman veri taşımaz (`Infallible`); tek sinyali göndericinin
+    /// düşmesi, yani thread'in gerçekten sonlanması.
+    detection_exit: Mutex<Option<mpsc::Receiver<Infallible>>>,
     latest_frame: SharedFrame,
     latest_detections: SharedDetections,
 }
@@ -70,11 +85,15 @@ impl Camera {
 
         let _ = UPDATES.set(Mutex::new(Some(ui_rx)));
 
+        let (exit_tx, exit_rx) = mpsc::channel::<Infallible>();
+
         let camera = Arc::new(Self {
             frame_tx,
             event_tx,
             stop_flag: Mutex::new(None),
             detection_enabled: Arc::new(AtomicBool::new(false)),
+            detection_shutdown: Arc::new(AtomicBool::new(false)),
+            detection_exit: Mutex::new(Some(exit_rx)),
             latest_frame: Arc::new(Mutex::new(None)),
             latest_detections: Arc::new(Mutex::new(Vec::new())),
         });
@@ -92,6 +111,8 @@ impl Camera {
             camera.latest_frame.clone(),
             camera.latest_detections.clone(),
             camera.detection_enabled.clone(),
+            camera.detection_shutdown.clone(),
+            exit_tx,
         );
 
         camera
@@ -121,6 +142,43 @@ impl Camera {
 
     pub fn set_detection(&self, enabled: bool) {
         self.detection_enabled.store(enabled, Ordering::Relaxed);
+    }
+
+    /// Kapanış — kamerayı durdurur, tespit işçisinin çıkmasını bekler.
+    ///
+    /// Beklemenin sebebi ONNX Runtime: işçi thread'i hiçbir zaman
+    /// sonlandırılmıyordu ve `iced::exit()` sonrası `main` dönerken statik
+    /// olarak bağlı ORT ikilisinin global yıkıcıları, işçi hâlâ
+    /// `Runtime::forward` içindeyken koşuyordu. Gözlenen sonuç kapanışta iki
+    /// kez `Detection hatası: GetElementType is not implemented`. Hata
+    /// kullanıcıya bir bozulma olarak yansımıyordu ama canlı bir çıkarımın
+    /// kendi altındaki kütüphanenin yıkımıyla yarışması tanım gereği
+    /// tanımsız davranış — çökme de mümkün.
+    ///
+    /// `set_detection(false)` önce geliyor: yeni çıkarım başlamasın, yalnızca
+    /// uçmakta olanın bitmesi beklensin.
+    pub fn shutdown(&self) {
+        self.stop();
+        self.detection_enabled.store(false, Ordering::Relaxed);
+        self.detection_shutdown.store(true, Ordering::Relaxed);
+
+        let Some(exit) = self.detection_exit.lock().unwrap().take() else {
+            // Zaten beklendi (ya da hiç kurulmadı).
+            return;
+        };
+
+        match exit.recv_timeout(DETECTION_SHUTDOWN_WAIT) {
+            // Gönderici düştü = thread sonlandı. Aranan sonuç bu.
+            Err(mpsc::RecvTimeoutError::Disconnected) => {}
+            // Süre doldu: kapanışı sonsuza kadar geciktirmiyoruz, ama sessiz de
+            // kalmıyoruz — bu, ORT yarışının hâlâ açık olduğu tek yol.
+            Err(mpsc::RecvTimeoutError::Timeout) => eprintln!(
+                "Tespit işçisi {} ms içinde çıkmadı; kapanışa devam ediliyor",
+                DETECTION_SHUTDOWN_WAIT.as_millis()
+            ),
+            // Kanal veri taşımıyor.
+            Ok(never) => match never {},
+        }
     }
 }
 
@@ -211,10 +269,15 @@ fn spawn_detection_worker(
     latest_frame: SharedFrame,
     latest_detections: SharedDetections,
     detection_enabled: Arc<AtomicBool>,
+    detection_shutdown: Arc<AtomicBool>,
+    exit_tx: mpsc::Sender<Infallible>,
 ) {
     thread::Builder::new()
         .name("detection-worker".into())
         .spawn(move || {
+            // Thread ne şekilde biterse bitsin (erken `return` dahil) bu
+            // gönderici düşer ve `Camera::shutdown` beklemekten kurtulur.
+            let _exit_guard = exit_tx;
             let model_path = if std::path::Path::new(LOCAL_MODEL).exists() {
                 LOCAL_MODEL
             } else {
@@ -243,6 +306,10 @@ fn spawn_detection_worker(
                 .unwrap_or_else(Instant::now);
 
             loop {
+                if detection_shutdown.load(Ordering::Relaxed) {
+                    break;
+                }
+
                 if !detection_enabled.load(Ordering::Relaxed) {
                     let mut detections = latest_detections.lock().unwrap();
                     let had_boxes = !detections.is_empty();
@@ -259,6 +326,12 @@ fn spawn_detection_worker(
                 let elapsed = last_run.elapsed();
                 if elapsed < interval {
                     thread::sleep(interval - elapsed);
+                }
+
+                // Uykuda kapanış başlamış olabilir — 300 ms geç kalmış bir
+                // çıkarımı başlatmanın anlamı yok.
+                if detection_shutdown.load(Ordering::Relaxed) {
+                    break;
                 }
 
                 let frame = latest_frame.lock().unwrap().take();

@@ -4,11 +4,12 @@
 //! 0.13'te kullanımdan kaldırıldı (gizli state tek doğruluk kaynağını bozuyor).
 
 use iced::widget::{button, container, row, text, Space, Text};
-use iced::{Alignment, Background, Border, Color, Element, Theme};
+use iced::{Alignment, Background, Border, Color, Element, Padding, Theme};
 
 use crate::styles;
 use crate::theme::{
     self, CONTROL_HEIGHT, FONT_LABEL, FONT_SM, ICON_BUTTON, RADIUS_FULL, SPACE_MD, SPACE_SM,
+    TOP_STRIP_HEIGHT,
 };
 
 /// Durum noktası çapı.
@@ -115,6 +116,8 @@ pub fn connection_warning<'a, Message: 'a>() -> Element<'a, Message> {
             .padding([SPACE_SM, SPACE_MD])
             .style(styles::error_badge),
     )
-    .padding(SPACE_MD)
+    // Üstten `TOP_STRIP_HEIGHT`: sol üst köşe artık yüzen adanın bandı ve
+    // macOS'ta trafik ışıklarının bölgesi. Uyarı o bandın altından başlıyor.
+    .padding(Padding::new(SPACE_MD).top(TOP_STRIP_HEIGHT))
     .into()
 }

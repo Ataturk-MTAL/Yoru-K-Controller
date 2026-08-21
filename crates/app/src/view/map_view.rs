@@ -9,7 +9,7 @@ use iced::widget::canvas::{self, Frame, Geometry, Path, Stroke};
 use iced::widget::{
     button, canvas as canvas_widget, column, container, row, sensor, slider, stack, text,
 };
-use iced::{Alignment, Color, Element, Fill, Point, Rectangle, Renderer, Theme};
+use iced::{Alignment, Color, Element, Fill, Padding, Point, Rectangle, Renderer, Theme};
 
 use crate::map::{MapState, MAX_ZOOM, MIN_ZOOM};
 use crate::message::Message;
@@ -17,6 +17,7 @@ use crate::state::App;
 use crate::styles;
 use crate::theme::{
     Tokens, CONTROL_HEIGHT, FONT_SM, FONT_XS, RADIUS_MD, RADIUS_SM, SPACE_MD, SPACE_SM, SPACE_XS,
+    TOP_STRIP_HEIGHT,
 };
 use crate::view::widgets::{connection_warning, icon_button, numeric};
 
@@ -38,10 +39,15 @@ const SKELETON_CROSS_INSET: f32 = 0.35;
 type ButtonStyleFn = fn(&Theme, button::Status) -> button::Style;
 
 pub fn view(app: &App) -> Element<'_, Message> {
+    let gps = (app.gps_active && app.gps_point_count > 0)
+        .then_some((app.gps_lat as f64, app.gps_lon as f64));
+
     let program = MapCanvas {
         map: &app.map,
-        gps: (app.gps_active && app.gps_point_count > 0)
-            .then_some((app.gps_lat as f64, app.gps_lon as f64)),
+        gps,
+        // Anahtar önce hesaplanıyor: `Keyed::get` değişimi görürse önbelleği
+        // düşürür, sonra Program o önbelleğe çizer.
+        cache: app.map_cache.get(MapKey::new(&app.map, gps, app.is_dark)),
     };
 
     // sensor: canvas boyutu değiştiğinde görünür tile kümesi yeniden hesaplanır.
@@ -133,7 +139,9 @@ fn coordinate_overlay(app: &App) -> Element<'_, Message> {
     )
     .align_right(Fill)
     .align_top(Fill)
-    .padding(SPACE_MD)
+    // Sağ üst köşede menü çipleri var; koordinat kutusu onların altından
+    // başlıyor (bkz. `theme::TOP_STRIP_HEIGHT`).
+    .padding(Padding::new(SPACE_MD).top(TOP_STRIP_HEIGHT))
     .into()
 }
 
@@ -141,7 +149,9 @@ fn coordinate_overlay(app: &App) -> Element<'_, Message> {
 ///
 /// Sol üst köşe `connection_warning`'e, sağ üst koordinat kutusuna, alt köşeler
 /// GPS düğmesi ile OSM atıfına ait — bu rozet dördünün hiçbiriyle çakışmayan
-/// tek serbest bölgede duruyor.
+/// tek serbest bölgede duruyor. Üst-orta artık yüzen adanın da yeri, o yüzden
+/// rozet `TOP_STRIP_HEIGHT` kadar aşağıdan başlıyor: aynı hizada olsalardı
+/// ada rozetin üstüne binerdi.
 fn offline_badge<'a>() -> Element<'a, Message> {
     container(
         container(text("Harita çevrimdışı — tile'lar indirilemedi").size(FONT_SM))
@@ -150,7 +160,7 @@ fn offline_badge<'a>() -> Element<'a, Message> {
     )
     .center_x(Fill)
     .align_top(Fill)
-    .padding(SPACE_MD)
+    .padding(Padding::new(SPACE_MD).top(TOP_STRIP_HEIGHT))
     .into()
 }
 
@@ -249,9 +259,33 @@ fn draw_tile_skeleton(frame: &mut Frame, rect: Rectangle, failed: bool, t: &Toke
     );
 }
 
+/// Harita çizimini belirleyen durumun tamamı.
+///
+/// `MapState`'in içi tek tek karşılaştırılmıyor; `revision()` çizimi etkileyen
+/// her değişiklikte artıyor (bkz. `map::MapState::revision`). GPS işaretçisi
+/// ve tema `MapState` dışında olduğu için ayrıca taşınıyor.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MapKey {
+    revision: u64,
+    /// GPS işaretçisinin dünya konumu — `f64: !Eq`, bit deseniyle taşınır.
+    gps_bits: Option<(u64, u64)>,
+    dark: bool,
+}
+
+impl MapKey {
+    fn new(map: &MapState, gps: Option<(f64, f64)>, dark: bool) -> Self {
+        Self {
+            revision: map.revision(),
+            gps_bits: gps.map(|(lat, lon)| (lat.to_bits(), lon.to_bits())),
+            dark,
+        }
+    }
+}
+
 struct MapCanvas<'a> {
     map: &'a MapState,
     gps: Option<(f64, f64)>,
+    cache: &'a canvas::Cache,
 }
 
 /// Sürükleme takibi — yalnızca etkileşim anına ait, uygulama verisi değil.
@@ -315,6 +349,12 @@ impl canvas::Program<Message> for MapCanvas<'_> {
         }
     }
 
+    /// Geometri `canvas::Cache` üzerinden çizilir.
+    ///
+    /// Önbelleksiz sürümde `visible_tiles()` her `draw` çağrısında bir `Vec`
+    /// ayırıyor, görünür tile'lar ve eksik olanların iskeletleri yeniden
+    /// çiziliyordu. Kamera açıkken `view` saniyede ~30 kez koşuyor, oysa harita
+    /// yalnızca kaydırma/zoom/tile inişinde değişiyor.
     fn draw(
         &self,
         _state: &Self::State,
@@ -324,38 +364,39 @@ impl canvas::Program<Message> for MapCanvas<'_> {
         _cursor: mouse::Cursor,
     ) -> Vec<Geometry> {
         let t = Tokens::for_theme(theme);
-        let mut frame = Frame::new(renderer, bounds.size());
 
-        frame.fill_rectangle(Point::ORIGIN, bounds.size(), t.surface_sunken);
+        let geometry = self.cache.draw(renderer, bounds.size(), |frame| {
+            frame.fill_rectangle(Point::ORIGIN, bounds.size(), t.surface_sunken);
 
-        // Görünür alanın tamamı üzerinden geçiyoruz, elde olanlar üzerinden
-        // değil: eksik tile'ın yerinde eskiden çıplak zemin kalıyordu ve
-        // "yükleniyor" ile "indirilemedi" ayırt edilemiyordu.
-        for coord in self.map.visible_tiles() {
-            let rect = self.map.tile_rect(coord);
-            match self.map.tiles.get(&coord) {
-                Some(handle) => frame.draw_image(rect, handle),
-                None => draw_tile_skeleton(&mut frame, rect, self.map.is_failed(&coord), &t),
+            // Görünür alanın tamamı üzerinden geçiyoruz, elde olanlar üzerinden
+            // değil: eksik tile'ın yerinde eskiden çıplak zemin kalıyordu ve
+            // "yükleniyor" ile "indirilemedi" ayırt edilemiyordu.
+            for coord in self.map.visible_tiles() {
+                let rect = self.map.tile_rect(coord);
+                match self.map.tiles.get(&coord) {
+                    Some(handle) => frame.draw_image(rect, handle),
+                    None => draw_tile_skeleton(frame, rect, self.map.is_failed(&coord), &t),
+                }
             }
-        }
 
-        if let Some((lat, lon)) = self.gps {
-            let position = self.map.screen_position(lat, lon);
-            frame.fill(&Path::circle(position, MARKER_RADIUS), t.success);
-            frame.stroke(
-                &Path::circle(position, MARKER_RADIUS),
-                Stroke::default().with_width(2.0).with_color(Color::WHITE),
-            );
-            frame.stroke(
-                &Path::circle(position, MARKER_RING),
-                Stroke::default().with_width(2.0).with_color(Color {
-                    a: 0.4,
-                    ..t.success
-                }),
-            );
-        }
+            if let Some((lat, lon)) = self.gps {
+                let position = self.map.screen_position(lat, lon);
+                frame.fill(&Path::circle(position, MARKER_RADIUS), t.success);
+                frame.stroke(
+                    &Path::circle(position, MARKER_RADIUS),
+                    Stroke::default().with_width(2.0).with_color(Color::WHITE),
+                );
+                frame.stroke(
+                    &Path::circle(position, MARKER_RING),
+                    Stroke::default().with_width(2.0).with_color(Color {
+                        a: 0.4,
+                        ..t.success
+                    }),
+                );
+            }
+        });
 
-        vec![frame.into_geometry()]
+        vec![geometry]
     }
 
     fn mouse_interaction(

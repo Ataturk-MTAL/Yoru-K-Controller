@@ -8,8 +8,11 @@
 //! **dünya pikseli** cinsinden konumudur (dünya boyutu `256 * 2^zoom`).
 
 use std::collections::{BTreeMap, HashSet};
-use std::sync::OnceLock;
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
+
+use tokio::sync::Semaphore;
 
 use iced::widget::image as iced_image;
 use iced::{Point, Rectangle, Size};
@@ -39,6 +42,22 @@ static CLIENT: OnceLock<reqwest::Client> = OnceLock::new();
 /// değişiminde yeniden isteniyor.
 const TILE_TIMEOUT: Duration = Duration::from_secs(10);
 
+/// Aynı anda uçabilecek en fazla tile indirmesi.
+///
+/// OpenStreetMap Tile Usage Policy en fazla iki indirme thread'i istiyor.
+/// Sınır uygulanmadan önce `request_tiles` görünür alandaki tüm eksik
+/// tile'ları tek `Task::batch` ile açıyordu — 1280x948 pencerede ilk boyamada
+/// ~25 eşzamanlı GET, her zoom degisiminde bir o kadar daha. Sürekli bu tempo
+/// IP bloğuna yol açar; bloklanan istemcide harita tamamen boş kalır ve arıza
+/// istemci tarafından anlaşılamaz.
+const MAX_CONCURRENT_TILE_FETCHES: usize = 2;
+
+/// İndirme kuyruğunun kapısı.
+///
+/// `Task::batch` hâlâ tüm eksik tile'lar için birer future üretiyor; bunlar
+/// `acquire()` üzerinde park ediyor ve ağ trafiği ikiyle sınırlı kalıyor.
+static TILE_PERMITS: Semaphore = Semaphore::const_new(MAX_CONCURRENT_TILE_FETCHES);
+
 /// Paylaşılan HTTP istemcisi — bağlantı havuzu tek noktada.
 fn client() -> &'static reqwest::Client {
     CLIENT.get_or_init(|| {
@@ -63,6 +82,25 @@ pub struct TileCoord {
     pub y: i64,
 }
 
+/// Bir indirme isteğinin ait olduğu görünüm kuşağı.
+///
+/// Kuyruk iki genişliğinde olduğu için sıradaki istekler artık bekliyor; zoom
+/// değişimi eski seviyenin tile'larını geçersiz kılsa bile o istekler kuyruğun
+/// başını tutmaya devam ederdi (`zoom_at` yalnızca `pending` kümesini temizler,
+/// uçmakta olan future'a ulaşamaz). Kuşak sayacı, park etmiş bir isteğin permit
+/// harcamadan önce kendi geçersizliğini görmesini sağlıyor.
+#[derive(Debug, Clone)]
+pub struct TileEpoch {
+    current: Arc<AtomicU64>,
+    issued: u64,
+}
+
+impl TileEpoch {
+    fn is_stale(&self) -> bool {
+        self.current.load(Ordering::Relaxed) != self.issued
+    }
+}
+
 pub struct MapState {
     pub zoom: u32,
     pub offset_x: f64,
@@ -77,6 +115,16 @@ pub struct MapState {
     /// istendiğinde (`take_missing_tiles`) buradan düşer, yoksa bir kez patlayan
     /// tile ömür boyu boş kalırdı.
     failed: HashSet<TileCoord>,
+    /// Görünüm kuşağı — her zoom değişiminde artar (bkz. `TileEpoch`).
+    epoch: Arc<AtomicU64>,
+    /// Çizimi etkileyen her değişiklikte artan sayaç.
+    ///
+    /// `MapCanvas` geometrisini `canvas::Cache` üstünde tutuyor; önbelleğin ne
+    /// zaman düşeceğini bu sayı söylüyor. Tek tek alanları (`zoom`, `offset_*`,
+    /// `tiles`, `failed`, `viewport`) karşılaştırmak yerine sayaç kullanılıyor:
+    /// `tiles` bir `BTreeMap`, uzunluğu değişmeden içeriği değişebilir ve
+    /// karşılaştırma o durumu kaçırırdı.
+    revision: u64,
 }
 
 impl Default for MapState {
@@ -89,6 +137,8 @@ impl Default for MapState {
             tiles: BTreeMap::new(),
             pending: HashSet::new(),
             failed: HashSet::new(),
+            epoch: Arc::new(AtomicU64::new(0)),
+            revision: 0,
         };
         state.center_on(DEFAULT_LAT, DEFAULT_LON);
         state
@@ -96,11 +146,22 @@ impl Default for MapState {
 }
 
 impl MapState {
+    /// Çizim durumu değişti — `canvas::Cache` bir sonraki karede düşsün.
+    fn touch(&mut self) {
+        self.revision = self.revision.wrapping_add(1);
+    }
+
+    /// Çizim durumunun sürüm numarası (bkz. `revision`).
+    pub fn revision(&self) -> u64 {
+        self.revision
+    }
+
     /// Verilen koordinatı görünür alanın ortasına alır.
     pub fn center_on(&mut self, lat: f64, lon: f64) {
         let (world_x, world_y) = lat_lon_to_world(lat, lon, self.zoom);
         self.offset_x = world_x - self.viewport.width as f64 / 2.0;
         self.offset_y = world_y - self.viewport.height as f64 / 2.0;
+        self.touch();
     }
 
     /// Fare sürüklemesi — harita imleçle birlikte hareket eder.
@@ -108,6 +169,7 @@ impl MapState {
         self.offset_x -= dx as f64;
         self.offset_y -= dy as f64;
         self.clamp_to_world();
+        self.touch();
     }
 
     /// Zoom değiştirir; `pivot` altındaki coğrafi nokta yerinde kalır.
@@ -122,16 +184,20 @@ impl MapState {
         self.offset_y = (self.offset_y + pivot.y as f64) * scale - pivot.y as f64;
         self.zoom = zoom;
 
-        // Zoom seviyesi değişince eski tile'lar geçersiz.
+        // Zoom seviyesi değişince eski tile'lar geçersiz. Kuşak sayacı da
+        // artar: kuyrukta bekleyen eski istekler permit almadan düşsün.
         self.tiles.clear();
         self.pending.clear();
         self.failed.clear();
+        self.epoch.fetch_add(1, Ordering::Relaxed);
         self.clamp_to_world();
+        self.touch();
     }
 
     pub fn set_viewport(&mut self, size: Size) {
         self.viewport = size;
         self.clamp_to_world();
+        self.touch();
     }
 
     /// Dünya boyutu (piksel).
@@ -173,6 +239,8 @@ impl MapState {
     /// Uzaktaki tile'lar aynı adımda bellekten düşürülür.
     pub fn take_missing_tiles(&mut self) -> Vec<TileCoord> {
         self.prune();
+        // `prune` görünürden uzaklaşan tile'ları atmış olabilir.
+        self.touch();
 
         let mut missing = Vec::new();
         for coord in self.visible_tiles() {
@@ -187,19 +255,35 @@ impl MapState {
         missing
     }
 
+    /// Şu anki görünüm kuşağı — `fetch_tile`'a verilir.
+    pub fn epoch(&self) -> TileEpoch {
+        TileEpoch {
+            current: Arc::clone(&self.epoch),
+            issued: self.epoch.load(Ordering::Relaxed),
+        }
+    }
+
     /// İnen tile'ı yerleştirir.
     pub fn insert_tile(&mut self, coord: TileCoord, handle: iced_image::Handle) {
         self.pending.remove(&coord);
         self.failed.remove(&coord);
         if coord.z == self.zoom {
             self.tiles.insert(coord, handle);
+            self.touch();
         }
     }
 
     /// İndirilemeyen tile'ı bekleyenlerden düşürür — sonraki denemeye açık kalır.
     pub fn drop_pending(&mut self, coord: TileCoord) {
         self.pending.remove(&coord);
-        self.failed.insert(coord);
+        // `insert_tile` ile aynı koruma: başka bir zoom seviyesine ait bir
+        // sonuç bu seviyenin çizimini etkilemez. Kuşağı geçmiş bir istek
+        // indirmeyi hiç denemeden `None` döndüğü için, koruma olmadan
+        // `has_failures()` bir tur "çevrimdışı" rozeti yakıyordu.
+        if coord.z == self.zoom {
+            self.failed.insert(coord);
+            self.touch();
+        }
     }
 
     /// Bu tile indirilemedi mi? (canvas iskeletini seçmek için)
@@ -270,7 +354,25 @@ pub fn lat_lon_to_world(lat: f64, lon: f64, zoom: u32) -> (f64, f64) {
 /// Tek bir tile'ı indirir ve çözer.
 ///
 /// Hata durumunda `None` döner — harita eksik tile ile çalışmaya devam eder.
-pub async fn fetch_tile(coord: TileCoord) -> (TileCoord, Option<iced_image::Handle>) {
+pub async fn fetch_tile(
+    coord: TileCoord,
+    epoch: TileEpoch,
+) -> (TileCoord, Option<iced_image::Handle>) {
+    // Kuyruğa gir. `_permit` düşene kadar en fazla iki indirme uçar.
+    let permit = match TILE_PERMITS.acquire().await {
+        Ok(permit) => permit,
+        // Semaphore yalnızca kapatılınca hata verir; bu uygulamada kapatan yok.
+        Err(error) => {
+            eprintln!("Tile kuyruğu kapandı: {error}");
+            return (coord, None);
+        }
+    };
+
+    // Sıra beklerken zoom değişmiş olabilir — bu tile artık çizilmeyecek.
+    if epoch.is_stale() {
+        return (coord, None);
+    }
+
     let client = client();
     let url = format!(
         "https://tile.openstreetmap.org/{}/{}/{}.png",
@@ -302,6 +404,9 @@ pub async fn fetch_tile(coord: TileCoord) -> (TileCoord, Option<iced_image::Hand
             return (coord, None);
         }
     };
+
+    // Ağ işi bitti; PNG çözme sırayı tutmasın — sıradaki tile hemen başlasın.
+    drop(permit);
 
     // PNG çözme CPU işi — bloklamayan çalıştırıcıya alınır.
     let decoded = tokio::task::spawn_blocking(move || {

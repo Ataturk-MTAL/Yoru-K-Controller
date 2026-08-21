@@ -67,12 +67,37 @@ pub const FONT_MD: f32 = 14.0;
 pub const FONT_LG: f32 = 16.0;
 pub const FONT_XL: f32 = 20.0;
 
-// ── Sabit yerleşim ölçüleri (Slint app.slint ile aynı) ──
-/// Toolbar — standart yükseklikteki kontroller sığsın diye Slint'teki 40 px'ten
-/// büyütüldü (36 px kontrol + üstte/altta 6 px pay).
-pub const TOOLBAR_HEIGHT: f32 = 48.0;
+// ── Sabit yerleşim ölçüleri ────────────────────────────
 pub const STATUS_BAR_HEIGHT: f32 = 26.0;
 pub const SIDEBAR_WIDTH: f32 = 320.0;
+
+/// Sistem başlık çubuğunun içeriğe girdiği bant.
+///
+/// macOS'ta `fullsize_content_view` içeriği başlık çubuğunun **altına**
+/// uzatıyor: pencerenin ilk ~28 px'i hâlâ sistemin başlık bölgesi. Trafik
+/// ışıkları orada duruyor ve o bandaki tıklamalar bize gelmiyor — pencereyi
+/// sürüklüyor. Yani bu bant çizim için serbest, etkileşim için değil: hiçbir
+/// kontrol buraya konulmamalı.
+///
+/// Diğer platformlarda sistem başlık çubuğu istemci alanının dışında kalıyor,
+/// bant sıfır.
+#[cfg(target_os = "macos")]
+pub const TITLEBAR_INSET: f32 = 28.0;
+#[cfg(not(target_os = "macos"))]
+pub const TITLEBAR_INSET: f32 = 0.0;
+
+/// Yüzen adanın kendi yüksekliği (kapsül dolgusu dahil).
+pub const ISLAND_HEIGHT: f32 = CONTROL_HEIGHT + 2.0 * SPACE_SM;
+
+/// İçerik alanının üstünde adaya ve menü çiplerine ayrılan bant.
+///
+/// Ada ve çipler `stack!` ile içeriğin ÜSTÜNE biniyor, yani yerleşimde yer
+/// kaplamıyorlar (kazanç #1'e gidiyor). Ama altlarındaki katmanların kendi
+/// üst köşe overlay'leri var — kamera rozetleri, harita koordinat kutusu,
+/// "bağlı değil" uyarısı. Bu sabit onların ne kadar aşağıdan başlayacağını
+/// söylüyor; tek bir yerde durması, ada büyüdüğünde dördünün birlikte
+/// kaymasını sağlıyor.
+pub const TOP_STRIP_HEIGHT: f32 = TITLEBAR_INSET + ISLAND_HEIGHT + SPACE_MD;
 
 /// Tema adları.
 pub const DARK_NAME: &str = "Yörü-K Dark";
@@ -152,9 +177,30 @@ pub struct Tokens {
     pub on_control_disabled: Color,
 
     // ── Kenarlıklar ─────────────────────────────────────
+    /// Bileşen sınırı — buton, `pick_list`, `text_input` kenarlığı.
+    ///
+    /// WCAG 2.2 SC 1.4.11 bir bileşenin sınırının komşu renge karşı en az
+    /// 3:1 tutmasını istiyor. Bu ton o eşiğe göre seçildi; sakin bir gri-mavi
+    /// olan eski değerler (koyu `#2e3348`, açık `#d8dae0`) yan panelde 1.41 /
+    /// 1.24, kartta 1.33 / 1.40'ta kalıyordu, yani buton üstünde durduğu
+    /// yüzeyden gözle ayırt edilmiyordu.
+    ///
+    /// Muafiyet yolu kasıtlı olarak seçilmedi. SC 1.4.11 metin etiketiyle
+    /// tanınabilen bir bileşende kenarlığa kontrast şartı koşmuyor; ama bu
+    /// tonu taşıyan kontroller arasında Işık, Fren ve Sol/Sağ Ters var —
+    /// kapalı durumdayken hepsi `secondary`. Donanım hareket ettiren bir
+    /// anahtarın nerede başlayıp bittiği görünmediğinde, uyum sağlanmış olsa
+    /// bile sorun duruyor. `on_control_disabled` için verilen karar da aynı
+    /// gerekçeliydi (bkz. aşağısı).
+    ///
+    /// `accent` / `success` / `danger` bu tondan geçmiyor: dolguları ya da
+    /// kendi rol renkli kenarlıkları zaten 3:1'in üstünde. `ghost`'un hiç
+    /// kenarlığı yok ve olmamalı — onu metni tanıtıyor, sınırı değil.
     pub outline: Color,
-    pub outline_strong: Color,
     /// Ayraç çizgileri (M3 `outline-variant`).
+    ///
+    /// SC 1.4.11 kapsamı dışında: ayraç bir bileşen değil, taşıdığı gruplama
+    /// bilgisi bölüm başlıkları ve boşluklarla zaten veriliyor.
     pub outline_variant: Color,
 
     // ── Endüstriyel / IoT ───────────────────────────────
@@ -252,8 +298,9 @@ impl Tokens {
             // kadar bu tonda duruyor. 3:1 alt sınırına çekildi (3.21:1).
             on_control_disabled: hex(0x656a80),
 
-            outline: hex(0x2e3348),
-            outline_strong: hex(0x3e4460),
+            // Yan panele karşı 3.24:1, karta karşı 3.06:1 (eski #2e3348:
+            // 1.41 / 1.33). Ölçüldü, tahmin değil.
+            outline: hex(0x606890),
             outline_variant: hex(0x222638),
 
             motor_running: hex(0x3dd68c),
@@ -343,8 +390,9 @@ impl Tokens {
             // Koyu temadakiyle aynı gerekçe: 1.85:1 → 3.12:1.
             on_control_disabled: hex(0x84889a),
 
-            outline: hex(0xd8dae0),
-            outline_strong: hex(0xc0c3cc),
+            // Yan panele karşı 3.12:1, karta karşı 3.52:1 (eski #d8dae0:
+            // 1.24 / 1.40).
+            outline: hex(0x84889a),
             outline_variant: hex(0xe8eaee),
 
             motor_running: hex(0x136e43),
