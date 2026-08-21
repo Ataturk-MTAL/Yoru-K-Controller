@@ -2,6 +2,14 @@
 members = ["crates/protocol", "crates/transport", "crates/control", "crates/vision", "crates/app"]
 resolver = "2"
 
+# Beş crate de aynı sürümü, aynı edition'ı ve aynı lisansı taşıyor; tek
+# kaynaktan veriliyor ki biri güncellenirken diğerleri geride kalmasın.
+[workspace.package]
+version    = "0.1.0"
+edition    = "2021"
+license    = "Apache-2.0"
+repository = "https://github.com/Ataturk-MTAL/Yoru-K-Controller"
+
 [workspace.dependencies]
 # UI — arayüz iced ile yazılıyor.
 # Slint sürümü `legacy/slint-ui` branch'inde duruyor.

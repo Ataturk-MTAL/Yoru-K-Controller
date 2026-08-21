@@ -1,7 +1,9 @@
 [package]
-name    = "vision"
-version = "0.1.0"
-edition = "2021"
+name              = "vision"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
 
 [dependencies]
 nokhwa    = { workspace = true }
