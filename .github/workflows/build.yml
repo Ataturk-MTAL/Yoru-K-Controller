@@ -162,8 +162,11 @@ jobs:
 
           cp target/release/app "$APP/Contents/MacOS/Yörü-K Controller"
 
-          # Tırnaksız heredoc: `${{ }}` ifadelerini Actions zaten adım
-          # çalışmadan önce yerine koyuyor; kabuk genişletmesi burada yok.
+          # Tırnaksız heredoc: Actions ifadeleri adım çalışmadan ÖNCE yerine
+          # koyuyor, kabuk genişletmesine iş kalmıyor. Bu yorumda ifade
+          # sözdizimini örneklemek de mümkün değil: Actions onu yorum içinde
+          # bile ayrıştırıyor ve boş bir ifade workflow'u tümden geçersiz
+          # kılıyor.
           cat > "$APP/Contents/Info.plist" << PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
