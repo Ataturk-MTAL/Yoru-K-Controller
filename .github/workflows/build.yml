@@ -36,6 +36,35 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
+      # Sürümün tek kaynağı `Cargo.toml`; etiket onu DOĞRULUYOR, ikinci bir
+      # kaynak olmuyor. Ayrışırlarsa release burada patlıyor — yanlış
+      # etiketlenmiş bir ikili yayımlanmaktansa build kırmızı olsun.
+      #
+      # Etiket yoksa (main push, PR) sürüm 0.0.0: bu çıktı bir yayın değil ve
+      # üstünde yayın numarası taşımamalı.
+      - name: Sürümü belirle
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+          CARGO_VERSION=$(sed -n '/^\[workspace.package\]/,/^\[/p' Cargo.toml \
+            | grep -m1 '^version' \
+            | sed -E 's/[^"]*"([^"]*)".*/\1/')
+          echo "Cargo.toml sürümü: $CARGO_VERSION"
+
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            if [[ "$VERSION" != "$CARGO_VERSION" ]]; then
+              echo "::error::Etiket ${GITHUB_REF_NAME} (-> $VERSION) ile Cargo.toml sürümü ($CARGO_VERSION) ayrışıyor. Önce Cargo.toml güncellensin."
+              exit 1
+            fi
+            echo "Yayın sürümü: $VERSION"
+          else
+            VERSION="0.0.0"
+            echo "Etiketsiz build — sürüm damgası basılmıyor (0.0.0)."
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
       - name: Install system dependencies (Linux)
         if: runner.os == 'Linux'
         run: |
@@ -133,7 +162,9 @@ jobs:
 
           cp target/release/app "$APP/Contents/MacOS/Yörü-K Controller"
 
-          cat > "$APP/Contents/Info.plist" << 'PLIST'
+          # Tırnaksız heredoc: `${{ }}` ifadelerini Actions zaten adım
+          # çalışmadan önce yerine koyuyor; kabuk genişletmesi burada yok.
+          cat > "$APP/Contents/Info.plist" << PLIST
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
             "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -148,7 +179,9 @@ jobs:
             <key>CFBundleIdentifier</key>
             <string>com.ataturk.yoru-k-controller</string>
             <key>CFBundleVersion</key>
-            <string>0.1.0</string>
+            <string>${{ steps.version.outputs.version }}</string>
+            <key>CFBundleShortVersionString</key>
+            <string>${{ steps.version.outputs.version }}</string>
             <key>CFBundlePackageType</key>
             <string>APPL</string>
             <key>NSHighResolutionCapable</key>
@@ -199,6 +232,13 @@ jobs:
             - **Windows:** `yoru-k-controller-windows.exe` indirip çalıştırın
             - **Linux:** `chmod +x yoru-k-controller-linux.AppImage` → çalıştırın
             - **macOS:** `tar xzf yoru-k-controller-macos-arm64.tar.gz` → `.app`'i Applications'a taşıyın
+
+            > **macOS notu:** paket imzalı ve notarize edilmiş değil. İlk açılışta
+            > Gatekeeper "bozuk / açılamıyor" diyecektir. Çözüm:
+            > ```
+            > xattr -dr com.apple.quarantine "/Applications/Yörü-K Controller.app"
+            > ```
+            > ya da `.app`'e sağ tık → Aç → Aç.
           files: |
             artifacts/yoru-k-controller-windows.exe/yoru-k-controller-windows.exe
             artifacts/yoru-k-controller-linux.AppImage/yoru-k-controller-linux.AppImage
@@ -226,6 +266,19 @@ jobs:
           draft: false
           prerelease: false
           generate_release_notes: true
+          append_body: true
+          body: |
+            **Kurulum:**
+            - **Windows:** `yoru-k-controller-windows.exe` indirip çalıştırın
+            - **Linux:** `chmod +x yoru-k-controller-linux.AppImage` → çalıştırın
+            - **macOS:** `tar xzf yoru-k-controller-macos-arm64.tar.gz` → `.app`'i Applications'a taşıyın
+
+            > **macOS notu:** paket imzalı ve notarize edilmiş değil. İlk açılışta
+            > Gatekeeper "bozuk / açılamıyor" diyecektir. Çözüm:
+            > ```
+            > xattr -dr com.apple.quarantine "/Applications/Yörü-K Controller.app"
+            > ```
+            > ya da `.app`'e sağ tık → Aç → Aç.
           files: |
             artifacts/yoru-k-controller-windows.exe/yoru-k-controller-windows.exe
             artifacts/yoru-k-controller-linux.AppImage/yoru-k-controller-linux.AppImage
