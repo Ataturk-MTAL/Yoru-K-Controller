@@ -113,7 +113,12 @@ fn about() -> Element<'static, Message> {
         text("Yörü-K İKA Kontrol Sistemi")
             .size(FONT_XL)
             .style(styles::text_primary),
-        text("v0.1.0").size(FONT_SM).style(styles::text_tertiary),
+        // Sürüm elle yazılmıyor: `CARGO_PKG_VERSION` derleme zamanında
+        // `Cargo.toml`'dan geliyor. Elle yazıldığında sürüm yükseltmesi bu
+        // satırı atlıyor ve uygulama kendini eski sürüm sanıyordu.
+        text!("v{}", env!("CARGO_PKG_VERSION"))
+            .size(FONT_SM)
+            .style(styles::text_tertiary),
         separator(),
         // Punto sırası bilgi sırasını izler: başlık (20) → gövde (14) →
         // dipnot (12). Eskiden tek satırlık gövde 16 px ile altındaki
